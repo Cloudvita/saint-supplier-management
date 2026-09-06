@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SAINT Supplier Management</title>
+  <meta name="description" content="Static HTML/CSS/JS supplier management module — no server, no build step." />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self';" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="wrap">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">S</div>
+        <div class="brand-text">
+          <h1>SAINT Supplier Management</h1>
+          <p>Static HTML build — runs entirely in your browser</p>
+        </div>
+      </div>
+      <span class="demo-pill">Local demo data</span>
+      <span class="muted" id="header-session-info" style="font-size:12px;"></span>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <!-- ---------------- Login gate (shown until an identity is established) ---------------- -->
+    <section id="auth-gate">
+      <div class="auth-layout">
+        <div class="card card-pad" id="login-box" style="max-width:420px;">
+          <h1 class="page-title">Log In</h1>
+          <p class="note mt-2">
+            Admins have privileges to add users. Check with your admin if your user ID hasn't been
+            created yet.
+          </p>
+          <form id="login-form" class="mt-4" novalidate>
+            <label class="label" for="login-userId">User ID</label>
+            <input class="input" id="login-userId" autocomplete="username" required />
+            <label class="label mt-2" for="login-password">Password</label>
+            <input class="input" type="password" id="login-password" autocomplete="current-password" required />
+            <div id="login-flash" class="mt-2" role="status" aria-live="polite"></div>
+            <button type="submit" class="btn-primary mt-4">Log In</button>
+          </form>
+        </div>
+
+        <div class="s2p-diagram-wrap">
+          <h2 class="page-title" style="font-size:16px;">What SAINT covers</h2>
+          <p class="muted mt-2" style="font-size:12px;">
+            An end-to-end Source-to-Pay platform. Built so far: Supplier Management and RFP
+            Management. The rest is the roadmap.
+          </p>
+          <ol class="s2p-diagram mt-4" aria-label="SAINT platform capability roadmap">
+            <li class="s2p-stage s2p-live"><span class="chip chip-emerald">Live</span><strong>Supplier Management</strong></li>
+            <li class="s2p-stage s2p-live"><span class="chip chip-emerald">Live</span><strong>RFP Management</strong></li>
+            <li class="s2p-stage s2p-roadmap"><span class="chip chip-slate">Roadmap</span><strong>Contract Management</strong></li>
+            <li class="s2p-stage s2p-roadmap"><span class="chip chip-slate">Roadmap</span><strong>Procurement</strong></li>
+            <li class="s2p-stage s2p-roadmap"><span class="chip chip-slate">Roadmap</span><strong>Market Intelligence</strong></li>
+            <li class="s2p-stage s2p-roadmap"><span class="chip chip-slate">Roadmap</span><strong>Spend Reporting</strong></li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------------- App shell (hidden until logged in) ---------------- -->
+    <div id="app-shell" hidden>
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Supplier management sections">
+      <button type="button" class="tab-btn" role="tab" data-tab="alerts" id="tab-btn-alerts" aria-controls="panel-alerts">
+        Risk Alerts <span id="alert-count-chip"></span>
+      </button>
+      <button type="button" class="tab-btn" role="tab" data-tab="add" id="tab-btn-add" aria-controls="panel-add">
+        Add Supplier
+      </button>
+      <button type="button" class="tab-btn" role="tab" data-tab="suppliers" id="tab-btn-suppliers" aria-controls="panel-suppliers">
+        Suppliers
+      </button>
+      <button type="button" class="tab-btn" role="tab" data-tab="genie" id="tab-btn-genie" aria-controls="panel-genie">
+        AI Genie
+      </button>
+      <button type="button" class="tab-btn" role="tab" data-tab="rfp" id="tab-btn-rfp" aria-controls="panel-rfp">
+        RFP
+      </button>
+      <button type="button" class="tab-btn" role="tab" data-tab="admin" id="tab-btn-admin" aria-controls="panel-admin">
+        Admin
+      </button>
+    </nav>
+
+    <main>
+      <!-- ---------------- Risk Alerts ---------------- -->
+      <section class="panel" id="panel-alerts" role="tabpanel" aria-labelledby="tab-btn-alerts">
+        <div id="alerts-mount"></div>
+      </section>
+
+      <!-- ---------------- Add Supplier (static markup — bound once, never re-rendered) ---------------- -->
+      <section class="panel" id="panel-add" role="tabpanel" aria-labelledby="tab-btn-add" hidden>
+        <h1 class="page-title">Supplier Onboarding</h1>
+        <p class="page-sub">
+          Enter supplier details manually, or attach a W-9 for a simulated pre-fill (this static build has
+          no OCR backend — see the note in the upload box).
+        </p>
+
+        <form class="card card-pad mt-4" id="supplier-form" novalidate>
+          <div id="form-flash" role="status" aria-live="polite"></div>
+
+          <fieldset class="upload-box">
+            <legend>W-9 Upload (optional, simulated)</legend>
+            <div class="flex-between" style="justify-content:flex-start; gap:12px;">
+              <input type="file" id="w9-file" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff" aria-label="Upload W-9 file (optional, simulated extraction)" />
+              <span id="w9-status" class="muted" role="status" aria-live="polite"></span>
+            </div>
+            <p id="w9-info" class="mt-2" style="display:none; color: var(--emerald-700);" role="status" aria-live="polite"></p>
+          </fieldset>
+
+          <h3 class="section-title">Company Identity</h3>
+          <div class="grid grid-2">
+            <div class="col-span-2">
+              <label class="label" for="f-legalName">Legal Name *</label>
+              <input class="input" id="f-legalName" name="legalName" placeholder="As shown on the W-9, line 1" required maxlength="200" />
+              <div class="field-error" data-error-for="legalName"></div>
+            </div>
+
+            <div>
+              <label class="label" for="f-dbaName">DBA / Business Name</label>
+              <input class="input" id="f-dbaName" name="dbaName" maxlength="200" />
+            </div>
+
+            <div>
+              <label class="label" for="f-taxClassification">Federal Tax Classification</label>
+              <select class="input" id="f-taxClassification" name="taxClassification">
+                <option value="UNKNOWN">— Select —</option>
+                <option value="INDIVIDUAL_SOLE_PROPRIETOR">Individual / Sole proprietor</option>
+                <option value="C_CORPORATION">C Corporation</option>
+                <option value="S_CORPORATION">S Corporation</option>
+                <option value="PARTNERSHIP">Partnership</option>
+                <option value="TRUST_ESTATE">Trust / Estate</option>
+                <option value="LLC">Limited Liability Company</option>
+                <option value="OTHER">Other</option>
+              </select>
+            </div>
+
+            <div class="col-span-2">
+              <label class="label">Company Type *</label>
+              <div class="radio-row" id="company-type-row">
+                <label class="radio-card checked" data-radio-card="PRIVATE">
+                  <input type="radio" name="companyType" value="PRIVATE" checked />
+                  Private company
+                </label>
+                <label class="radio-card" data-radio-card="PUBLIC">
+                  <input type="radio" name="companyType" value="PUBLIC" />
+                  Public company (listed)
+                </label>
+              </div>
+            </div>
+
+            <div id="ticker-field" style="display:none;">
+              <label class="label" for="f-tickerSymbol">Ticker Symbol</label>
+              <input class="input" id="f-tickerSymbol" name="tickerSymbol" placeholder="e.g. ACME" style="text-transform:uppercase;" maxlength="12" />
+              <div class="field-error" data-error-for="tickerSymbol"></div>
+            </div>
+
+            <div>
+              <label class="label" for="f-taxIdType">Tax ID Type</label>
+              <select class="input" id="f-taxIdType" name="taxIdType">
+                <option value="EIN">EIN</option>
+                <option value="SSN">SSN</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="label" for="f-taxId">Tax ID (9 digits)</label>
+              <input class="input" id="f-taxId" name="taxId" placeholder="12-3456789" maxlength="11" />
+              <div class="field-error" data-error-for="taxId"></div>
+              <p class="mt-2 muted" style="font-size:11px;">Only the last 4 digits are ever stored — the rest never leaves this form.</p>
+            </div>
+          </div>
+
+          <h3 class="section-title">Contact &amp; Address</h3>
+          <div class="grid grid-3">
+            <div>
+              <label class="label" for="f-contactName">Contact Name</label>
+              <input class="input" id="f-contactName" name="contactName" maxlength="120" />
+            </div>
+            <div>
+              <label class="label" for="f-contactEmail">Contact Email</label>
+              <input class="input" type="email" id="f-contactEmail" name="contactEmail" maxlength="200" />
+              <div class="field-error" data-error-for="contactEmail"></div>
+            </div>
+            <div>
+              <label class="label" for="f-contactPhone">Contact Phone</label>
+              <input class="input" id="f-contactPhone" name="contactPhone" maxlength="40" />
+            </div>
+            <div class="col-span-2">
+              <label class="label" for="f-addressLine1">Address Line 1</label>
+              <input class="input" id="f-addressLine1" name="addressLine1" maxlength="200" />
+            </div>
+            <div>
+              <label class="label" for="f-addressLine2">Address Line 2</label>
+              <input class="input" id="f-addressLine2" name="addressLine2" maxlength="200" />
+            </div>
+            <div>
+              <label class="label" for="f-city">City</label>
+              <input class="input" id="f-city" name="city" maxlength="100" />
+            </div>
+            <div>
+              <label class="label" for="f-state">State</label>
+              <input class="input" id="f-state" name="state" maxlength="60" />
+            </div>
+            <div>
+              <label class="label" for="f-postalCode">ZIP / Postal Code</label>
+              <input class="input" id="f-postalCode" name="postalCode" maxlength="20" />
+            </div>
+          </div>
+
+          <h3 class="section-title">Procurement Attributes</h3>
+          <div class="grid grid-4">
+            <div>
+              <label class="label" for="f-category">Category</label>
+              <input class="input" id="f-category" name="category" placeholder="IT Hardware" maxlength="120" />
+            </div>
+            <div>
+              <label class="label" for="f-paymentTerms">Payment Terms</label>
+              <select class="input" id="f-paymentTerms" name="paymentTerms">
+                <option>NET15</option>
+                <option selected>NET30</option>
+                <option>NET45</option>
+                <option>NET60</option>
+                <option>NET90</option>
+                <option>DUE_ON_RECEIPT</option>
+              </select>
+            </div>
+            <div>
+              <label class="label" for="f-currency">Currency</label>
+              <select class="input" id="f-currency" name="currency">
+                <option selected>USD</option>
+                <option>EUR</option>
+                <option>GBP</option>
+                <option>INR</option>
+                <option>CAD</option>
+                <option>AUD</option>
+              </select>
+            </div>
+            <div>
+              <label class="label" for="f-status">Status</label>
+              <select class="input" id="f-status" name="status">
+                <option>DRAFT</option>
+                <option selected>ACTIVE</option>
+                <option>ON_HOLD</option>
+                <option>BLOCKED</option>
+              </select>
+            </div>
+          </div>
+
+          <h3 class="section-title">Market Intelligence &amp; Risk Alerts</h3>
+          <p class="note">
+            This static build has no live news feed. "Pull news" generates a clearly labeled simulated
+            digest so the workflow can still be demonstrated end to end.
+          </p>
+          <div class="grid grid-4 mt-4">
+            <div>
+              <label class="label" for="f-newsCadence">News Cadence</label>
+              <select class="input" id="f-newsCadence" name="newsCadence">
+                <option value="DAILY">Daily</option>
+                <option value="WEEKLY" selected>Weekly</option>
+                <option value="MONTHLY">Monthly</option>
+              </select>
+            </div>
+            <div class="col-span-3">
+              <label class="label" for="f-newsKeywords">Extra Search Keywords</label>
+              <input class="input" id="f-newsKeywords" name="newsKeywords" placeholder="subsidiary names, brands, former names…" maxlength="300" />
+            </div>
+
+            <div class="col-span-4">
+              <div class="flex-between" style="margin-bottom:4px;">
+                <label class="label" style="margin-bottom:0;" for="f-marketNews">Market News</label>
+                <button type="button" class="btn-ghost btn-sm" id="pull-news-btn">Pull news</button>
+              </div>
+              <textarea class="input" id="f-marketNews" name="marketNews" style="font-family: ui-monospace, monospace; font-size:12px;" maxlength="8000"
+                placeholder="Click 'Pull news' to populate a simulated market brief for this company, or type notes manually."></textarea>
+            </div>
+
+            <div class="col-span-4" id="risk-preview-mount"></div>
+
+            <div class="col-span-2">
+              <label class="label" for="f-procurementManagerEmail">Procurement Manager Email (alert recipient)</label>
+              <input class="input" type="email" id="f-procurementManagerEmail" name="procurementManagerEmail" placeholder="manager@company.com" maxlength="200" />
+              <div class="field-error" data-error-for="procurementManagerEmail"></div>
+            </div>
+            <div class="col-span-2" style="display:flex; align-items:flex-end; gap:24px;">
+              <label class="checkbox-row">
+                <input type="checkbox" id="f-alertsEnabled" name="alertsEnabled" checked />
+                Alert on merger / acquisition / bankruptcy / dispute
+              </label>
+              <label class="checkbox-row">
+                <input type="checkbox" id="f-diverseSupplier" name="diverseSupplier" />
+                Diverse supplier
+              </label>
+            </div>
+          </div>
+
+          <div class="mt-4" style="display:flex; align-items:center; gap:12px; border-top:1px solid var(--slate-200); padding-top:18px;">
+            <button type="submit" class="btn-primary" id="save-supplier-btn">Save Supplier</button>
+            <button type="button" class="btn-ghost" id="reset-supplier-btn">Reset</button>
+            <span id="w9-attached-note" class="muted" style="font-size:11px; display:none;">W-9 attached ✓</span>
+          </div>
+        </form>
+      </section>
+
+      <!-- ---------------- Suppliers ---------------- -->
+      <section class="panel" id="panel-suppliers" role="tabpanel" aria-labelledby="tab-btn-suppliers" hidden>
+        <div class="flex-between">
+          <h2 class="page-title">Suppliers by Date Added</h2>
+          <div class="filters">
+            <input type="search" class="input" id="supplier-search" placeholder="Search name, code, category…" maxlength="120" aria-label="Search suppliers by name, code, or category" />
+            <select class="input" id="supplier-type-filter" aria-label="Filter suppliers by company type">
+              <option value="">All types</option>
+              <option value="PUBLIC">Public</option>
+              <option value="PRIVATE">Private</option>
+            </select>
+          </div>
+        </div>
+        <p class="muted mt-2" id="supplier-count-line"></p>
+        <div class="mt-4" id="suppliers-mount"></div>
+      </section>
+
+      <!-- ---------------- AI Genie ---------------- -->
+      <section class="panel" id="panel-genie" role="tabpanel" aria-labelledby="tab-btn-genie" hidden>
+        <h1 class="page-title">AI Genie</h1>
+        <p class="page-sub">
+          Scan every supplier for the latest news and risk events on demand. (Simulated — no external
+          data source is connected in this static build.)
+        </p>
+        <div class="card card-pad mt-4">
+          <div class="genie-controls">
+            <button type="button" class="btn-primary" id="genie-scan-btn">Scan all suppliers now</button>
+            <span class="muted" id="genie-supplier-count"></span>
+          </div>
+          <div class="genie-log" id="genie-log" role="status" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <!-- ---------------- RFP ---------------- -->
+      <section class="panel" id="panel-rfp" role="tabpanel" aria-labelledby="tab-btn-rfp" hidden>
+        <h1 class="page-title">RFP Lifecycle</h1>
+        <p class="page-sub">
+          Vendor directory, RFP intake &amp; dispatch, response evaluation, and a CPO historical
+          dashboard — ported from the RFPPILOT prototype. Document generation uses a simulated
+          (mock) engine in this static build; see README.
+        </p>
+
+        <nav class="subtabs mt-4" id="rfp-subtabs" role="tablist" aria-label="RFP workflow steps">
+          <button type="button" class="subtab-btn" role="tab" data-subtab="vendors" id="rfp-subtab-btn-vendors" aria-controls="rfp-subpanel-vendors">
+            1. Vendor Directory
+          </button>
+          <button type="button" class="subtab-btn" role="tab" data-subtab="builder" id="rfp-subtab-btn-builder" aria-controls="rfp-subpanel-builder">
+            2. RFP Builder &amp; Dispatch
+          </button>
+          <button type="button" class="subtab-btn" role="tab" data-subtab="eval" id="rfp-subtab-btn-eval" aria-controls="rfp-subpanel-eval">
+            3. Evaluation &amp; Scoring
+          </button>
+          <button type="button" class="subtab-btn" role="tab" data-subtab="dashboard" id="rfp-subtab-btn-dashboard" aria-controls="rfp-subpanel-dashboard">
+            4. CPO Dashboard
+          </button>
+        </nav>
+
+        <!-- Step 1: Vendor Directory -->
+        <div class="subpanel" id="rfp-subpanel-vendors" role="tabpanel" aria-labelledby="rfp-subtab-btn-vendors">
+          <div class="card card-pad">
+            <h3 class="section-title" style="margin-top:0;">Add New Candidate Vendor</h3>
+            <form id="rfp-add-vendor-form">
+              <div class="grid grid-3">
+                <div>
+                  <label class="label" for="rv-name">Vendor Name *</label>
+                  <input class="input" id="rv-name" placeholder="e.g. Acme Cloud Systems" maxlength="200" required />
+                </div>
+                <div>
+                  <label class="label" for="rv-poc">Point of Contact (POC) *</label>
+                  <input class="input" id="rv-poc" placeholder="e.g. Jane Doe (Account Rep)" maxlength="200" required />
+                </div>
+                <div>
+                  <label class="label" for="rv-email">Account Representative Email *</label>
+                  <input class="input" type="email" id="rv-email" placeholder="e.g. jane.doe@acmecloud.com" maxlength="200" required />
+                </div>
+              </div>
+              <div id="rfp-vendor-form-flash" role="status" aria-live="polite"></div>
+              <button type="submit" class="btn-primary mt-4">Save Vendor to Directory</button>
+            </form>
+          </div>
+
+          <h3 class="section-title">Import from Suppliers</h3>
+          <p class="muted" style="margin-top:-8px;">
+            Pull suppliers already on file in the Supplier Management module in as RFP-dispatchable
+            vendors, using their contact name and email on record.
+          </p>
+          <div class="card card-pad">
+            <div id="rfp-import-suppliers-mount"></div>
+            <div class="mt-4" style="display:flex; align-items:center; gap:12px;">
+              <button type="button" class="btn-primary" id="rfp-import-suppliers-btn">Add Selected Suppliers to Vendor Directory</button>
+              <span class="muted" id="rfp-import-selected-count" style="font-size:12px;"></span>
+            </div>
+            <div id="rfp-import-flash" class="mt-2" role="status" aria-live="polite"></div>
+          </div>
+
+          <h3 class="section-title">Active Vendor Roster</h3>
+          <div id="rfp-vendor-roster-mount"></div>
+        </div>
+
+        <!-- Step 2: RFP Builder & Dispatch -->
+        <div class="subpanel" id="rfp-subpanel-builder" role="tabpanel" aria-labelledby="rfp-subtab-btn-builder" hidden>
+          <div class="card card-pad">
+            <div class="flex-between">
+              <div style="flex:1; min-width:240px;">
+                <label class="label" for="rfp-title">RFP Program Title</label>
+                <input class="input" id="rfp-title" maxlength="200" value="Enterprise Platform Modernization RFP" />
+              </div>
+              <div style="display:flex; gap:8px;">
+                <button type="button" class="btn-ghost" id="rfp-save-intake-btn">Save Intake</button>
+                <button type="button" class="btn-ghost" id="rfp-reset-intake-btn">Reset Intake</button>
+              </div>
+            </div>
+
+            <h3 class="section-title">RFP Intake Questionnaire (10 Core Requirements)</h3>
+            <p class="muted" style="margin-top:-8px;">Each field is capped at 200 characters.</p>
+            <div class="grid grid-2" id="rfp-intake-grid"></div>
+
+            <h3 class="section-title">Document Generation</h3>
+            <button type="button" class="btn-primary" id="rfp-generate-btn">Generate Formal RFP Document</button>
+            <div id="rfp-generate-status" class="mt-2" role="status" aria-live="polite"></div>
+            <div id="rfp-preview-mount" class="mt-4"></div>
+
+            <div id="rfp-dispatch-section" style="display:none;">
+              <h3 class="section-title">Vendor Distribution &amp; Dispatch</h3>
+              <p class="muted" style="margin-top:-8px;">Select destination vendors from Step 1 and send the generated RFP.</p>
+              <div id="rfp-dispatch-vendor-list" class="grid grid-3"></div>
+              <div class="mt-4" style="display:flex; gap:12px;">
+                <button type="button" class="btn-primary" id="rfp-dispatch-btn">Send RFP to Selected Vendors</button>
+                <button type="button" class="btn-ghost" id="rfp-reset-run-btn">Reset / Start New RFP Run</button>
+              </div>
+              <div id="rfp-dispatch-flash" class="mt-2" role="status" aria-live="polite"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3: Evaluation & Scoring -->
+        <div class="subpanel" id="rfp-subpanel-eval" role="tabpanel" aria-labelledby="rfp-subtab-btn-eval" hidden>
+          <div id="rfp-eval-mount"></div>
+        </div>
+
+        <!-- Step 4: CPO Dashboard -->
+        <div class="subpanel" id="rfp-subpanel-dashboard" role="tabpanel" aria-labelledby="rfp-subtab-btn-dashboard" hidden>
+          <div id="rfp-dashboard-mount"></div>
+        </div>
+      </section>
+
+      <!-- ---------------- Admin ---------------- -->
+      <section class="panel" id="panel-admin" role="tabpanel" aria-labelledby="tab-btn-admin" hidden>
+        <h1 class="page-title">User Administration</h1>
+        <p class="page-sub">Manage up to 10 platform users. Only SuperUser can add or edit accounts.</p>
+
+        <div id="admin-unauthorized-mount" class="mt-4"></div>
+
+        <div id="admin-panel" hidden>
+          <div class="flex-between mt-4">
+            <h2 class="page-title">Users <span class="muted" id="admin-user-count-label" style="font-size:13px; font-weight:400;"></span></h2>
+          </div>
+
+          <div class="card card-pad mt-4">
+            <h3 class="section-title" style="margin-top:0;" id="admin-form-title">Add New User</h3>
+            <form id="admin-user-form" novalidate>
+              <div class="grid grid-2">
+                <div>
+                  <label class="label" for="admin-firstName">First Name *</label>
+                  <input class="input" id="admin-firstName" maxlength="60" required />
+                  <div class="field-error" data-error-for="firstName"></div>
+                </div>
+                <div>
+                  <label class="label" for="admin-lastName">Last Name *</label>
+                  <input class="input" id="admin-lastName" maxlength="60" required />
+                  <div class="field-error" data-error-for="lastName"></div>
+                </div>
+                <div>
+                  <label class="label" for="admin-dept">Department *</label>
+                  <input class="input" id="admin-dept" maxlength="100" placeholder="e.g. Procurement" required />
+                  <div class="field-error" data-error-for="dept"></div>
+                </div>
+                <div>
+                  <label class="label" for="admin-role">Role *</label>
+                  <select class="input" id="admin-role" required>
+                    <option value="">— Select —</option>
+                  </select>
+                  <div class="field-error" data-error-for="role"></div>
+                </div>
+                <div>
+                  <label class="label" for="admin-userId">User ID (for login) *</label>
+                  <input class="input" id="admin-userId" maxlength="40" autocomplete="off" required />
+                  <div class="field-error" data-error-for="userId"></div>
+                </div>
+                <div>
+                  <label class="label" for="admin-userPassword">Password (for login) *</label>
+                  <input class="input" id="admin-userPassword" maxlength="100" autocomplete="off" required />
+                  <p class="muted mt-2" style="font-size:11px;">
+                    Visible here so you can share it with the user — this demo has no way to send it
+                    to them directly, and stores it in plain text (not real security; see README).
+                  </p>
+                  <div class="field-error" data-error-for="password"></div>
+                </div>
+              </div>
+              <div id="admin-form-flash" class="mt-2" role="status" aria-live="polite"></div>
+              <div class="mt-4" style="display:flex; gap:12px;">
+                <button type="submit" class="btn-primary" id="admin-submit-btn">Submit</button>
+                <button type="button" class="btn-ghost" id="admin-cancel-btn">Cancel</button>
+              </div>
+            </form>
+          </div>
+
+          <h3 class="section-title">User Roster</h3>
+          <div id="admin-user-list-mount"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      SAINT Supplier Management — static HTML/CSS/JS build. Data lives only in this browser's
+      localStorage; nothing is sent to a server.
+    </footer>
+    </div>
+  </div>
+
+  <script src="js/utils.js"></script>
+  <script src="js/idb.js"></script>
+  <script src="js/validation.js"></script>
+  <script src="js/demo-data.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/components/alerts.js"></script>
+  <script src="js/components/form.js"></script>
+  <script src="js/components/table.js"></script>
+  <script src="js/components/genie.js"></script>
+  <script src="js/rfp/rfp-data.js"></script>
+  <script src="js/rfp/rfp-store.js"></script>
+  <script src="js/components/rfp-vendors.js"></script>
+  <script src="js/components/rfp-builder.js"></script>
+  <script src="js/components/rfp-eval.js"></script>
+  <script src="js/components/rfp-dashboard.js"></script>
+  <script src="js/components/rfp.js"></script>
+  <script src="js/admin/admin-data.js"></script>
+  <script src="js/admin/admin-store.js"></script>
+  <script src="js/components/admin.js"></script>
+  <script src="js/components/auth-gate.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
