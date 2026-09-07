@@ -2,7 +2,7 @@
   "name": "saint-supplier-management",
   "version": "0.1.0",
   "private": true,
-  "description": "SAINT — Supplier Management Module (Source-to-Procure platform)",
+  "description": "SAINT \u2014 Supplier Management Module (Source-to-Procure platform)",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -12,8 +12,11 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:seed": "tsx src/db/seed.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:seed": "tsx src/bootstrap/seed.ts",
+    "db:studio": "drizzle-kit studio",
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "agent:dev": "cd backend && ./venv/bin/uvicorn saint_agents.main:app --reload --port 8000",
+    "verify": "npm run typecheck && npm run check:boundaries"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.699.0",

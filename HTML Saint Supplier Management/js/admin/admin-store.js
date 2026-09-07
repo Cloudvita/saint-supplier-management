@@ -22,7 +22,14 @@
 
   const SAINT = (global.SAINT = global.SAINT || {});
   const { createId, deepClone, debounce } = SAINT.utils;
-  const { ROLE_OPTIONS, MAX_USERS, SUPERUSER_USERNAME, checkSuperUserCredentials } = SAINT.adminData;
+  const {
+    ROLE_OPTIONS,
+    MAX_USERS,
+    SUPERUSER_USERNAME,
+    checkSuperUserCredentials,
+    permissionsForRole,
+    approvalLimitForRole,
+  } = SAINT.adminData;
 
   const USERS_KEY = "saint.admin.users.v1";
   const SESSION_KEY = "saint.admin.session.v1";
@@ -130,6 +137,50 @@
       notify();
     }
 
+    /* ---------------------- authorisation ------------------------ */
+
+    /** Permissions held by whoever is signed in right now. */
+    function currentPermissions() {
+      const identity = getIdentity();
+      if (!identity) return [];
+      if (identity.kind === "superuser") return ["*"];
+      return permissionsForRole(identity.role);
+    }
+
+    /**
+     * Can the signed-in user do this?
+     *
+     * Every guarded action in the app routes through here, so the rule lives
+     * in one place instead of being re-derived from the role string at each
+     * call site. Fails closed: nobody signed in means no permission.
+     */
+    function can(permission) {
+      const held = currentPermissions();
+      return held.includes("*") || held.includes(permission);
+    }
+
+    /** Delegation-of-authority ceiling for the signed-in user; null = unlimited. */
+    function currentApprovalLimit() {
+      const identity = getIdentity();
+      if (!identity) return 0;
+      if (identity.kind === "superuser") return null;
+      return approvalLimitForRole(identity.role);
+    }
+
+    /** Display name for audit trails ("Created by…", "Approved by…"). */
+    function currentActorName() {
+      const identity = getIdentity();
+      if (!identity) return "Unknown";
+      if (identity.kind === "superuser") return "SuperUser";
+      return `${identity.firstName} ${identity.lastName}`;
+    }
+
+    function currentActorRole() {
+      const identity = getIdentity();
+      if (!identity) return "—";
+      return identity.kind === "superuser" ? "Super User" : identity.role;
+    }
+
     /* -------------------------- users ---------------------------- */
 
     function listUsers() {
@@ -215,6 +266,11 @@
       getUser,
       addUser,
       updateUser,
+      can,
+      currentPermissions,
+      currentApprovalLimit,
+      currentActorName,
+      currentActorRole,
     };
   }
 

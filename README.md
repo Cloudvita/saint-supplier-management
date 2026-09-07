@@ -1,7 +1,25 @@
-# SAINT — Supplier Management Module
+# SAINT — Source-to-Procure Platform
 
-Supplier master data, W-9 intake with OCR extraction, and market-risk monitoring for the
-SAINT Source-to-Procure platform.
+A **modular monolith**: one Next.js application partitioned into seven domain modules with
+enforced boundaries, plus a Python LangGraph service that runs the AI agents.
+
+> **Architecture:** see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the module map, the
+> boundary rules, and how the LangChain integration works.
+
+## Modules
+
+| Module | Owns |
+|---|---|
+| `/auth` | Credentials (scrypt), sessions, TOTP MFA, the request guard |
+| `/user-admin` | RBAC, users, roles, team hierarchy, delegation-of-authority limits |
+| `/suppliers` | Supplier master, W-9 intake, market-news risk monitoring, performance |
+| `/contracts` | Lifecycle, metadata extraction, clause audit, renewals, e-signature |
+| `/spend` | Requisitions, POs, goods receipts, invoices, budgets, 3-way match |
+| `/reports` | Cross-module dashboards, metric pipeline, export engine (owns no tables) |
+| `/ai-agents` | Tool registry, mode routing, gateway to the LangGraph service |
+
+Each module exposes exactly one public entry point (`index.ts`). Reaching past a barrel, or
+importing another module's tables, fails `npm run verify`.
 
 ## What it does
 
@@ -13,6 +31,10 @@ SAINT Source-to-Procure platform.
 | 10 most recent records on screen | Server-rendered table with expandable detail |
 | Weekly / monthly market news | Pluggable news provider → keyword risk classifier → digest written into the supplier's Market News field |
 | M&A / bankruptcy / dispute alerts | Classifier raises a `risk_alert`, emails the procurement manager via Amazon SES |
+| Contract clause compliance | Deterministic audit; a contract missing GDPR / liability / termination-for-convenience cannot be sent for signature |
+| Purchase controls | Budget headroom + delegation of authority + sole-source justification, enforced in `spend/domain/policy.ts` |
+| Invoice three-way match | PO vs goods receipt vs invoice, with relative and absolute tolerance |
+| Conversational AI | 25 tools across 6 modules, exposed to LangChain agents in four operational modes |
 
 ## Architecture
 
@@ -26,8 +48,11 @@ Next.js 15 (App Router)  ──►  AWS App Runner (container from ECR)
    ├──► Drizzle ORM ──► Amazon RDS for PostgreSQL   (supplier master, news, alerts)
    ├──► Amazon Textract                             (W-9 field extraction)
    ├──► Amazon S3                                   (W-9 archive, SSE-AES256)
-   ├──► Amazon SES                                  (risk alert email)
-   └──► News provider (mock | NewsAPI | RSS)        (market intelligence)
+   ├──► Amazon SES                                  (risk alert + signature email)
+   ├──► News provider (mock | NewsAPI | RSS)        (market intelligence)
+   └──► Python agent service (FastAPI + LangGraph)  (conversational AI, SSE)
+            │  fetches the tool manifest from /api/agent/tools
+            └► calls back into module tools as the acting user
 ```
 
 **Why this stack:** one deployable unit, no separate API server to operate. Drizzle is a

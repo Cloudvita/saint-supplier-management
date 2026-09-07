@@ -40,7 +40,7 @@
     chipMount.className = alerts.length > 0 ? "chip chip-red" : "";
 
     if (alerts.length === 0) {
-      mount.innerHTML = `<div class="card empty">No open risk alerts. Run the AI Genie to scan for the latest news and risk events.</div>`;
+      mount.innerHTML = `<div class="card empty">No open risk alerts. Run the Supplier Management AI Agent on the Suppliers tab to scan for the latest news and risk events.</div>`;
       return;
     }
 

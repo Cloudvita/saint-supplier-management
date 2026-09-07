@@ -1,19 +1,16 @@
-import { NextResponse } from "next/server";
-import { sql } from "drizzle-orm";
-import { db } from "@/db";
+import { withRoute, ok } from "@/core/http";
+import { agentServiceHealth } from "@/modules/ai_agents";
 
 export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
 
-/** App Runner health check target. */
-export async function GET() {
-  try {
-    await db.execute(sql`select 1`);
-    return NextResponse.json({ status: "ok", db: "up", ts: new Date().toISOString() });
-  } catch (e) {
-    return NextResponse.json(
-      { status: "degraded", db: "down", error: e instanceof Error ? e.message : "unknown" },
-      { status: 503 }
-    );
-  }
-}
+/** Liveness + dependency probe. Deliberately unauthenticated. */
+export const GET = withRoute("health", async () => {
+  const agent = await agentServiceHealth();
+  return ok({
+    status: "ok",
+    service: "saint",
+    modules: ["auth", "user_admin", "suppliers", "contracts", "spend", "reports", "ai_agents"],
+    dependencies: { agentService: agent },
+    timestamp: new Date().toISOString(),
+  });
+});

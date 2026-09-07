@@ -15,8 +15,10 @@
       alerts: document.getElementById("panel-alerts"),
       add: document.getElementById("panel-add"),
       suppliers: document.getElementById("panel-suppliers"),
-      genie: document.getElementById("panel-genie"),
       rfp: document.getElementById("panel-rfp"),
+      contracts: document.getElementById("panel-contracts"),
+      spend: document.getElementById("panel-spend"),
+      reports: document.getElementById("panel-reports"),
       admin: document.getElementById("panel-admin"),
     };
 
@@ -35,8 +37,11 @@
     SAINT.components.alerts.init();
     SAINT.components.form.init();
     SAINT.components.table.init();
-    SAINT.components.genie.init();
+    SAINT.components.supplierAgent.init();
     SAINT.components.rfp.init();
+    SAINT.components.contracts.init();
+    SAINT.components.spend.init();
+    SAINT.components.reports.init();
     SAINT.components.admin.init();
   }
 

@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
-import { getNewsProvider } from "@/lib/news/providers";
-import { buildDigest, classifyArticle, isAlertable } from "@/lib/news/classifier";
+import { z } from "zod";
+import { withRoute, ok, parseJson } from "@/core/http";
+import { requirePermission } from "@/modules/auth";
+import { isAlertable, previewNews } from "@/modules/suppliers";
 
 export const dynamic = "force-dynamic";
 
@@ -10,47 +11,28 @@ export const dynamic = "force-dynamic";
  * onboarding form can populate the Market News field before submit.
  * Nothing is persisted and no alert emails are sent.
  */
-export async function POST(req: Request) {
-  const body = (await req.json().catch(() => ({}))) as {
-    companyName?: string;
-    ticker?: string;
-    keywords?: string;
-    cadence?: "DAILY" | "WEEKLY" | "MONTHLY";
-  };
+export const POST = withRoute("news.preview", async (req) => {
+  await requirePermission(req, "suppliers:read");
+  const body = await parseJson(
+    req,
+    z.object({
+      companyName: z.string().trim().min(1, "companyName is required"),
+      ticker: z.string().optional(),
+      keywords: z.string().optional(),
+      cadence: z.enum(["DAILY", "WEEKLY", "MONTHLY"]).default("WEEKLY"),
+    })
+  );
 
-  if (!body.companyName?.trim()) {
-    return NextResponse.json({ error: "companyName is required" }, { status: 400 });
-  }
-  const cadence =
-    body.cadence === "DAILY" || body.cadence === "MONTHLY" ? body.cadence : "WEEKLY";
-
-  try {
-    const provider = getNewsProvider();
-    const raw = await provider.fetchNews({
-      companyName: body.companyName.trim(),
-      ticker: body.ticker,
-      keywords: body.keywords,
-      cadence,
-    });
-    const items = raw
-      .map(classifyArticle)
-      .sort((a, b) => b.score - a.score || b.publishedAt.getTime() - a.publishedAt.getTime());
-
-    return NextResponse.json({
-      provider: provider.name,
-      digest: buildDigest(body.companyName.trim(), items, cadence),
-      riskEvents: items.filter(isAlertable).map((i) => ({
-        eventType: i.eventType,
-        severity: i.severity,
-        headline: i.headline,
-        url: i.url,
-      })),
-      count: items.length,
-    });
-  } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "News fetch failed" },
-      { status: 502 }
-    );
-  }
-}
+  const result = await previewNews(body);
+  return ok({
+    provider: result.provider,
+    digest: result.digest,
+    riskEvents: result.items.filter(isAlertable).map((i) => ({
+      eventType: i.eventType,
+      severity: i.severity,
+      headline: i.headline,
+      url: i.url,
+    })),
+    count: result.items.length,
+  });
+});

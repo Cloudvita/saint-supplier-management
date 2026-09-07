@@ -24,12 +24,13 @@ css/styles.css                 All styling (no external stylesheet/CDN dependenc
 js/utils.js                    id generation, HTML escaping, debounce, deep clone
 js/idb.js                       Tiny generic IndexedDB helper (open db, get/replace records)
 js/validation.js                Field validation rules (mirrors the original Zod schema)
-js/demo-data.js                 Seed suppliers + simulated market-news/W-9 generators
+js/demo-data.js                 Seed suppliers + simulated market-news generators
 js/store.js                     In-memory + IndexedDB data layer, pub/sub
 js/components/alerts.js         Risk Alerts tab
 js/components/form.js           Add Supplier tab
 js/components/table.js          Suppliers tab (search/filter/expand)
 js/components/genie.js          AI Genie tab (bulk simulated news scan)
+js/ai/w9-bot.js                 Supplier AI Bot: parses a W-9 into reviewable field proposals
 js/rfp/rfp-data.js              RFP seed vendors/parameters + mock RFP document generator
 js/rfp/rfp-store.js             RFP tab's own in-memory + localStorage data layer, pub/sub
 js/components/rfp.js            RFP tab: sub-tab wiring, mounts the 4 steps below
@@ -37,12 +38,70 @@ js/components/rfp-vendors.js    RFP Step 1: candidate vendor directory
 js/components/rfp-builder.js    RFP Step 2: 10-question intake, generation, dispatch
 js/components/rfp-eval.js       RFP Step 3: weighted scoring, ranking, comparison chart
 js/components/rfp-dashboard.js  RFP Step 4: CPO KPI overview, registry, audit inspector
-js/admin/admin-data.js          Role options + the (demo-only) SuperUser credential check
+js/admin/admin-data.js          Roles, per-role permissions, DOA limits, SuperUser check
 js/admin/admin-store.js         Admin tab's own localStorage data layer + session login state
 js/components/admin.js          Admin tab: add/edit user form + roster (SuperUser-only)
+js/contracts/contract-data.js   Contract vocabulary + the clause/risk review rules
+js/contracts/contract-store.js  Contracts + the analyst -> manager approval workflow
+js/components/contracts.js      Contracts tab: register, editor, review & approval drawer
+js/spend/spend-store.js         Purchase orders raised against approved contracts
+js/components/spend.js          Spend tab: PO creation, dispatch, lifecycle
+js/components/reports.js        Reporting tab: cross-module KPIs, charts, spend detail
 js/components/auth-gate.js      Whole-app login screen + session/logout chrome in the header
 js/app.js                       Tab wiring + boots every component
 ```
+
+## The six modules
+
+| Module | Tab | What it does |
+|---|---|---|
+| **User Administration** | Admin | Create up to 10 users, assign one of six procurement roles. Each role carries a permission set and a delegation-of-authority ceiling (`js/admin/admin-data.js`). |
+| **Supplier Management** | Add Supplier / Suppliers | Add, edit and remove suppliers. Upload a W-9 and the **Supplier AI Bot** proposes the metadata for human review. |
+| **RFP** | RFP | Vendor directory → intake & dispatch → weighted evaluation → award and shortlist. |
+| **Contract Management** | Contracts | Contract metadata, a quick review of the terms for missing mandatory clauses and non-standard risk, and a drafted-by-analyst / approved-by-manager workflow. |
+| **Spend Management** | Spend | Raise a purchase order from an approved contract and send it to the supplier. |
+| **Reporting** | Reports | Cross-module analytics: active suppliers, active contracts, total spend, spend by category, active POs. |
+
+### How the modules interlock
+
+The value of the chain is that each step gates the next, and the gates are
+enforced in the stores rather than by hiding buttons:
+
+```
+Admin ──grants role/permissions──► every other module's guards
+Suppliers ──supplier record──► Contracts ──only when APPROVED──► Spend (POs)
+                                    │                              │
+                                    └──────────► Reports ◄──────────┘
+```
+
+- A **Sourcing Analyst** may draft and submit a contract but not approve one.
+- The **person who submitted** a contract cannot also approve it.
+- A contract **missing a mandatory clause** (data privacy, limitation of
+  liability, termination for convenience) cannot be approved at all.
+- An approver cannot approve **above their delegation-of-authority limit**.
+- A purchase order can only be raised against an **approved** contract, and
+  the sum of its POs cannot exceed the contract value.
+
+### The Supplier AI Bot (W-9 intake)
+
+`js/ai/w9-bot.js` reads an uploaded W-9 and proposes supplier metadata. It is a
+real parse, not a mock: it recovers text from PDF text-showing operators, form
+field values and XMP metadata, then extracts the legal name, DBA name, tax
+classification (from the line-3 checkbox), EIN/SSN, address, email and phone.
+
+Two properties matter more than the extraction itself:
+
+- **Every proposal carries a real confidence score** reflecting where the value
+  came from — read verbatim, read with an assumption, or inferred from the
+  filename. A scanned or compressed PDF yields low confidence and says so.
+- **Nothing is applied without a human.** Proposals land in a review table
+  where each row can be ticked, edited or rejected; only ticked rows reach the
+  form. Low-confidence rows arrive unticked, so a person has to make a positive
+  decision about them.
+
+As with the RFP generator, there is no OCR service or LLM call — shipping an
+API key in public JavaScript is not an option. See "Wiring a real backend"
+below for replacing the parse with Textract or a model endpoint.
 
 The **RFP** tab is ported from [RFPPILOT](https://github.com/Cloudvita/RFPPILOT), a
 Streamlit prototype for the same 4-step RFP lifecycle (vendor directory → intake &
@@ -88,14 +147,28 @@ If this browser previously ran an older version of this app that used
 the first time you load the page after upgrading, then the old `localStorage`
 keys are cleared — nothing you'd already added gets silently dropped.
 
+**Contracts** and **purchase orders** each own their own IndexedDB database
+(`saint-contract-db` and `saint-spend-db`), through the same `js/idb.js`
+helper. They are deliberately separate stores rather than extra object stores
+in `saint-supplier-db`: each module owns its own persistence, and one module's
+schema change cannot force a version bump on another's. They reference
+suppliers and contracts by id and never read each other's records.
+
+Because the demo seed for contracts needs real suppliers to attach to — and
+purchase orders need an approved contract — each store awaits the one below it
+(`SAINT.store.ready`, `SAINT.contractStore.ready`) before seeding. Nothing
+else in the app needs boot sequencing.
+
 The **RFP** tab still persists to `localStorage` (`saint.rfp.*` keys) — its
 data volume (vendors, dispatched RFPs) is much smaller than supplier
 records, so the same capacity pressure doesn't apply there today. It could
 be moved onto the same `js/idb.js` helper later if that changes.
 
 **Uploaded W-9 files are never stored at all**, in either `localStorage` or
-IndexedDB — see "What's simulated" below for why, and what that means for
-retrieving them later.
+IndexedDB. The Supplier AI Bot reads the file's bytes in memory to extract
+field proposals and keeps only the file's name, type and size on the supplier
+record — the document itself is never persisted, so it cannot be retrieved
+later from this build.
 
 **Security note on sensitive data:** the tax ID field is validated and then
 immediately reduced to its last 4 digits (`taxIdLast4`) before anything is
@@ -162,19 +235,32 @@ A static HTML page has nowhere secret to keep those credentials, so shipping
 real calls to those services from the browser would mean embedding API keys
 in public, readable JavaScript. Instead:
 
-- **W-9 upload** reads only the file's *name/type/size* (never its bytes)
-  and makes a best-effort guess at the legal name from the filename. It is
-  clearly labeled "simulated" in the UI.
+- **W-9 extraction** is a real parse, not a mock: the Supplier AI Bot
+  (`js/ai/w9-bot.js`) reads the uploaded file's bytes and recovers text from
+  PDF text operators, form field values and XMP metadata, then extracts the
+  W-9 fields from it. What is *not* real is OCR — a scanned image or a
+  compressed PDF stream cannot be read this way, and the bot says so and drops
+  its confidence rather than pretending otherwise. Every proposal goes to a
+  human review table before anything is applied.
 - **Market news / risk events** are generated locally from a small phrase
   bank, seeded deterministically per company/day so repeated pulls in a demo
   don't feel random. Every digest is prefixed `SIMULATED MARKET BRIEF`.
 - **Email notifications** are not sent; risk alerts are simply recorded and
   shown in the Risk Alerts tab.
 
-To wire in the real integrations, replace the calls in `js/demo-data.js`
-(`generateNewsDigest`, `simulateW9Extraction`) with `fetch()` calls to your
-own backend endpoints that hold the actual AWS/news-API credentials —
-never call Textract, SES, or a paid news API directly from browser code.
+- **Contract clause review** (`js/contracts/contract-data.js`) is a
+  deterministic keyword rule set, not a model call. That is partly the same
+  API-key constraint and partly deliberate: a finding that blocks a contract
+  from being approved should be reproducible and explainable, and a named rule
+  is both.
+
+To wire in the real integrations, replace `generateNewsDigest` in
+`js/demo-data.js` and the `recoverText`/extraction functions in
+`js/ai/w9-bot.js` with `fetch()` calls to your own backend endpoints that hold
+the actual AWS/news-API credentials — never call Textract, SES, or a paid news
+API directly from browser code. The bot's return shape
+(`{ proposals: [{ field, value, confidence, source }] }`) is what the review UI
+depends on, so a Textract-backed implementation can drop straight in behind it.
 
 The same applies to the **RFP** tab: RFPPILOT calls the Mistral API to expand
 the 10-question intake into a formal document, with a documented fallback to

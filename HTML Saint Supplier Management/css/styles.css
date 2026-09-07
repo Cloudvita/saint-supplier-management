@@ -611,22 +611,22 @@ tr.row-hover:hover {
   font-weight: 700;
 }
 
-/* --------------------------- genie ------------------------------ */
+/* ------------------------ agent controls ------------------------ */
 
-.genie-controls {
+.agent-controls {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 14px;
 }
 
-.genie-log {
+.agent-log {
   margin-top: 16px;
   font-size: 12px;
   color: var(--slate-600);
 }
 
-.genie-log ul {
+.agent-log ul {
   margin: 8px 0 0;
   padding-left: 18px;
 }
@@ -1043,4 +1043,99 @@ a:focus-visible,
   color: var(--slate-400);
   font-size: 15px;
   font-weight: 400;
+}
+
+/* ---------------------------------------------------------------------------
+   Reporting module — horizontal magnitude bars.
+
+   Single hue by design: each chart shows ONE series (spend by category, spend
+   by supplier), so a second colour would encode nothing. Every bar is directly
+   labelled with its name and value, which means the colour is reinforcement
+   rather than the encoding — nothing here is readable by colour alone.
+   --------------------------------------------------------------------------- */
+
+.hbar-chart {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.hbar-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 190px) 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.hbar-label {
+  font-size: 12px;
+  color: var(--slate-700);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hbar-track {
+  background: var(--slate-100);
+  border-radius: 4px;
+  height: 14px;
+  overflow: hidden;
+}
+
+.hbar-fill {
+  height: 100%;
+  /* 4px rounded data-end, anchored flush to the baseline at the left. */
+  border-radius: 0 4px 4px 0;
+  background: var(--saint-600);
+  min-width: 2px;
+  transition: width 240ms ease;
+}
+
+.hbar-value {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--slate-700);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.report-section {
+  break-inside: avoid;
+}
+
+/* Status distribution: a labelled count list, not a colour-coded chart. */
+.status-dist {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.status-dist-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--slate-100);
+}
+
+.status-dist-row:last-child {
+  border-bottom: 0;
+}
+
+.status-dist-count {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--slate-800);
+}
+
+@media (max-width: 640px) {
+  .hbar-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .hbar-value {
+    justify-self: start;
+  }
 }

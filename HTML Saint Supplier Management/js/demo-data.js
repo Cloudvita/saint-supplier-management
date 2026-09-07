@@ -118,20 +118,9 @@
     return { digest: lines.join("\n"), riskEvents };
   }
 
-  /** Simulated W-9 field extraction — stands in for Amazon Textract, which needs
-   * server-held AWS credentials that a static page cannot hold securely.
-   * Reads only the file's name/type/size, never its byte content, and fabricates
-   * nothing beyond what's already visible in those metadata fields. */
-  function simulateW9Extraction(file) {
-    const base = file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
-    const guessedName = base.length >= 2 ? base.slice(0, 200) : "";
-    return {
-      fields: guessedName ? { legalName: guessedName } : {},
-      confidence: guessedName ? 55 : 0,
-      pairsFound: guessedName ? 1 : 0,
-      simulated: true,
-    };
-  }
+  // W-9 extraction lives in js/ai/w9-bot.js now — it parses the document
+  // itself rather than guessing from the filename, so the old filename-only
+  // stand-in was removed rather than left as a second, worse code path.
 
-  SAINT.demoData = { DEMO_SUPPLIERS, buildDemoRows, generateNewsDigest, simulateW9Extraction };
+  SAINT.demoData = { DEMO_SUPPLIERS, buildDemoRows, generateNewsDigest };
 })(window);

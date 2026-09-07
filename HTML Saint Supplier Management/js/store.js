@@ -242,6 +242,125 @@
       return s ? toPublicSupplier(s) : null;
     }
 
+    /**
+     * Update an existing supplier.
+     *
+     * Runs the same validation as creation, so an edit can never write a
+     * record that `addSupplier` would have rejected. Identity fields the
+     * business relies on (id, supplierCode, createdAt) are preserved — an
+     * edit changes the supplier's data, never which supplier it is.
+     *
+     * Tax IDs follow the create path's rule: only the last 4 digits and the
+     * type are retained, and leaving the field blank keeps whatever was
+     * already stored rather than wiping it.
+     */
+    function updateSupplier(id, rawFields) {
+      const existing = suppliers.get(id);
+      if (!existing) return { ok: false, errors: { legalName: "Supplier not found." } };
+
+      const { valid, errors, data } = validateSupplier(rawFields);
+      if (!valid) return { ok: false, errors };
+
+      const now = new Date().toISOString();
+      const newLast4 = data.taxIdDigits ? data.taxIdDigits.slice(-4) : null;
+
+      Object.assign(existing, {
+        legalName: data.legalName,
+        dbaName: data.dbaName,
+        companyType: data.companyType,
+        tickerSymbol: data.tickerSymbol,
+        taxClassification: data.taxClassification,
+        // A blank tax id on edit means "leave it alone", not "clear it".
+        taxIdType: newLast4 ? data.taxIdType : existing.taxIdType,
+        taxIdLast4: newLast4 || existing.taxIdLast4,
+        contactName: data.contactName,
+        contactEmail: data.contactEmail,
+        contactPhone: data.contactPhone,
+        website: data.website,
+        addressLine1: data.addressLine1,
+        addressLine2: data.addressLine2,
+        city: data.city,
+        state: data.state,
+        postalCode: data.postalCode,
+        country: data.country,
+        category: data.category,
+        paymentTerms: data.paymentTerms,
+        currency: data.currency,
+        status: data.status,
+        diverseSupplier: data.diverseSupplier,
+        newsCadence: data.newsCadence,
+        marketNews: data.marketNews,
+        newsKeywords: data.newsKeywords,
+        alertsEnabled: data.alertsEnabled,
+        procurementManagerEmail: data.procurementManagerEmail,
+        updatedAt: now,
+      });
+
+      persistDebounced();
+      notify();
+      return { ok: true, supplier: toPublicSupplier(existing) };
+    }
+
+    /**
+     * Remove a supplier and every alert raised against it.
+     *
+     * Alerts are deleted alongside the supplier because an alert that points
+     * at a supplier which no longer exists would render as "Unknown supplier"
+     * forever with no way to clear it.
+     */
+    function removeSupplier(id) {
+      const existing = suppliers.get(id);
+      if (!existing) return { ok: false, error: "Supplier not found" };
+
+      suppliers.delete(id);
+      Array.from(alerts.values())
+        .filter((a) => a.supplierId === id)
+        .forEach((a) => alerts.delete(a.id));
+
+      persistDebounced();
+      notify();
+      return { ok: true, removed: { id, legalName: existing.legalName, supplierCode: existing.supplierCode } };
+    }
+
+    /** Every supplier, unfiltered — for pickers in Contracts and Spend. */
+    function allSuppliers() {
+      return Array.from(suppliers.values())
+        .map((s) => ({
+          id: s.id,
+          supplierCode: s.supplierCode,
+          legalName: s.legalName,
+          category: s.category,
+          status: s.status,
+          currency: s.currency,
+          paymentTerms: s.paymentTerms,
+          contactEmail: s.contactEmail,
+        }))
+        .sort((a, b) => a.legalName.localeCompare(b.legalName));
+    }
+
+    /** Counts used by the Reporting module. */
+    function supplierStats() {
+      const rows = Array.from(suppliers.values());
+      const byStatus = {};
+      const byCategory = {};
+      rows.forEach((s) => {
+        byStatus[s.status] = (byStatus[s.status] || 0) + 1;
+        const key = s.category || "Uncategorised";
+        byCategory[key] = (byCategory[key] || 0) + 1;
+      });
+      return {
+        total: rows.length,
+        active: rows.filter((s) => s.status === "ACTIVE").length,
+        draft: rows.filter((s) => s.status === "DRAFT").length,
+        onHold: rows.filter((s) => s.status === "ON_HOLD").length,
+        blocked: rows.filter((s) => s.status === "BLOCKED").length,
+        diverse: rows.filter((s) => s.diverseSupplier).length,
+        publicCompanies: rows.filter((s) => s.companyType === "PUBLIC").length,
+        byStatus,
+        byCategory,
+      };
+    }
+
     function openAlertsFor(supplierId) {
       return Array.from(alerts.values())
         .filter((a) => a.supplierId === supplierId && (a.status === "NEW" || a.status === "NOTIFIED"))
@@ -279,7 +398,7 @@
 
     const SEVERITY_THRESHOLD = { LOW: 0, MEDIUM: 1, HIGH: 2, CRITICAL: 3 };
 
-    /** Shared by refreshSupplierNews() and runGenieScanAll(): pulls a fresh digest
+    /** Shared by refreshSupplierNews() and runAgentScanAll(): pulls a fresh digest
      * for one supplier and raises risk alerts (MEDIUM+) when it opted in. Mutates
      * the record in place but never persists/notifies — callers own that. */
     function applyNewsRefresh(s) {
@@ -329,7 +448,7 @@
       return generateNewsDigest(companyName, cadence, keywords, ticker);
     }
 
-    function runGenieScanAll() {
+    function runAgentScanAll() {
       const results = Array.from(suppliers.values()).map((s) => {
         const { createdAlerts } = applyNewsRefresh(s);
         return { supplierId: s.id, newAlerts: createdAlerts };
@@ -394,12 +513,16 @@
       ready,
       subscribe,
       addSupplier,
+      updateSupplier,
+      removeSupplier,
       getSupplier,
       listSuppliers,
+      allSuppliers,
+      supplierStats,
       totalSupplierCount,
       refreshSupplierNews,
       previewNews,
-      runGenieScanAll,
+      runAgentScanAll,
       listOpenAlerts,
       dismissAlert,
       dismissAllOpenAlerts,

@@ -47,16 +47,16 @@
         <div class="s2p-diagram-wrap">
           <h2 class="page-title" style="font-size:16px;">What SAINT covers</h2>
           <p class="muted mt-2" style="font-size:12px;">
-            An end-to-end Source-to-Pay platform. Built so far: Supplier Management and RFP
-            Management. The rest is the roadmap.
+            An end-to-end Source-to-Pay platform. Live: user administration, supplier management,
+            RFP, contract management with an approval workflow, purchase orders and reporting.
           </p>
           <ol class="s2p-diagram mt-4" aria-label="SAINT platform capability roadmap">
             <li class="s2p-stage s2p-live"><span class="chip chip-emerald">Live</span><strong>Supplier Management</strong></li>
             <li class="s2p-stage s2p-live"><span class="chip chip-emerald">Live</span><strong>RFP Management</strong></li>
-            <li class="s2p-stage s2p-roadmap"><span class="chip chip-slate">Roadmap</span><strong>Contract Management</strong></li>
-            <li class="s2p-stage s2p-roadmap"><span class="chip chip-slate">Roadmap</span><strong>Procurement</strong></li>
+            <li class="s2p-stage s2p-live"><span class="chip chip-emerald">Live</span><strong>Contract Management</strong></li>
+            <li class="s2p-stage s2p-live"><span class="chip chip-emerald">Live</span><strong>Procurement (Spend &amp; POs)</strong></li>
             <li class="s2p-stage s2p-roadmap"><span class="chip chip-slate">Roadmap</span><strong>Market Intelligence</strong></li>
-            <li class="s2p-stage s2p-roadmap"><span class="chip chip-slate">Roadmap</span><strong>Spend Reporting</strong></li>
+            <li class="s2p-stage s2p-live"><span class="chip chip-emerald">Live</span><strong>Spend Reporting</strong></li>
           </ol>
         </div>
       </div>
@@ -74,11 +74,17 @@
       <button type="button" class="tab-btn" role="tab" data-tab="suppliers" id="tab-btn-suppliers" aria-controls="panel-suppliers">
         Suppliers
       </button>
-      <button type="button" class="tab-btn" role="tab" data-tab="genie" id="tab-btn-genie" aria-controls="panel-genie">
-        AI Genie
-      </button>
       <button type="button" class="tab-btn" role="tab" data-tab="rfp" id="tab-btn-rfp" aria-controls="panel-rfp">
         RFP
+      </button>
+      <button type="button" class="tab-btn" role="tab" data-tab="contracts" id="tab-btn-contracts" aria-controls="panel-contracts">
+        Contracts
+      </button>
+      <button type="button" class="tab-btn" role="tab" data-tab="spend" id="tab-btn-spend" aria-controls="panel-spend">
+        Spend
+      </button>
+      <button type="button" class="tab-btn" role="tab" data-tab="reports" id="tab-btn-reports" aria-controls="panel-reports">
+        Reports
       </button>
       <button type="button" class="tab-btn" role="tab" data-tab="admin" id="tab-btn-admin" aria-controls="panel-admin">
         Admin
@@ -95,20 +101,21 @@
       <section class="panel" id="panel-add" role="tabpanel" aria-labelledby="tab-btn-add" hidden>
         <h1 class="page-title">Supplier Onboarding</h1>
         <p class="page-sub">
-          Enter supplier details manually, or attach a W-9 for a simulated pre-fill (this static build has
-          no OCR backend — see the note in the upload box).
+          Enter supplier details manually, or upload a W-9 and let the Supplier AI Bot propose the
+          metadata. Nothing the bot reads is applied until you review and approve each field.
         </p>
 
         <form class="card card-pad mt-4" id="supplier-form" novalidate>
           <div id="form-flash" role="status" aria-live="polite"></div>
 
           <fieldset class="upload-box">
-            <legend>W-9 Upload (optional, simulated)</legend>
+            <legend>W-9 Upload — Supplier AI Bot</legend>
             <div class="flex-between" style="justify-content:flex-start; gap:12px;">
               <input type="file" id="w9-file" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff" aria-label="Upload W-9 file (optional, simulated extraction)" />
               <span id="w9-status" class="muted" role="status" aria-live="polite"></span>
             </div>
             <p id="w9-info" class="mt-2" style="display:none; color: var(--emerald-700);" role="status" aria-live="polite"></p>
+            <div id="w9-review-mount" class="mt-2"></div>
           </fieldset>
 
           <h3 class="section-title">Company Identity</h3>
@@ -309,6 +316,23 @@
       <section class="panel" id="panel-suppliers" role="tabpanel" aria-labelledby="tab-btn-suppliers" hidden>
         <div class="flex-between">
           <h2 class="page-title">Suppliers by Date Added</h2>
+          <div class="card card-pad mt-4">
+            <div class="flex-between" style="flex-wrap:wrap; gap:8px;">
+              <div>
+                <h3 class="section-title" style="margin:0;">Supplier Management AI Agent</h3>
+                <p class="muted" style="font-size:12px; margin:4px 0 0;">
+                  Scans every supplier for the latest market news and raises risk alerts for acquisitions,
+                  mergers, bankruptcy and disputes. Results land on the rows below.
+                </p>
+              </div>
+              <div class="agent-controls">
+                <button type="button" class="btn-primary" id="supplier-agent-scan-btn">Scan all suppliers now</button>
+                <span class="muted" id="supplier-agent-count" style="font-size:12px;"></span>
+              </div>
+            </div>
+            <div class="agent-log" id="supplier-agent-log" role="status" aria-live="polite"></div>
+          </div>
+
           <div class="filters">
             <input type="search" class="input" id="supplier-search" placeholder="Search name, code, category…" maxlength="120" aria-label="Search suppliers by name, code, or category" />
             <select class="input" id="supplier-type-filter" aria-label="Filter suppliers by company type">
@@ -323,20 +347,6 @@
       </section>
 
       <!-- ---------------- AI Genie ---------------- -->
-      <section class="panel" id="panel-genie" role="tabpanel" aria-labelledby="tab-btn-genie" hidden>
-        <h1 class="page-title">AI Genie</h1>
-        <p class="page-sub">
-          Scan every supplier for the latest news and risk events on demand. (Simulated — no external
-          data source is connected in this static build.)
-        </p>
-        <div class="card card-pad mt-4">
-          <div class="genie-controls">
-            <button type="button" class="btn-primary" id="genie-scan-btn">Scan all suppliers now</button>
-            <span class="muted" id="genie-supplier-count"></span>
-          </div>
-          <div class="genie-log" id="genie-log" role="status" aria-live="polite"></div>
-        </div>
-      </section>
 
       <!-- ---------------- RFP ---------------- -->
       <section class="panel" id="panel-rfp" role="tabpanel" aria-labelledby="tab-btn-rfp" hidden>
@@ -451,6 +461,57 @@
         </div>
       </section>
 
+      <!-- ---------------- Contract Management ---------------- -->
+
+      <section class="panel" id="panel-contracts" role="tabpanel" aria-labelledby="tab-btn-contracts" hidden>
+
+        <h2>Contract Management</h2>
+
+        <p class="page-sub">
+
+          Capture contract metadata, run a quick review of the terms for missing mandatory clauses and
+
+          non-standard risk, and move it through the approval workflow: a sourcing analyst drafts and
+
+          submits, a sourcing manager approves. Only an approved contract can carry a purchase order.
+
+        </p>
+
+        <div class="mt-4" id="contracts-mount"></div>
+
+      </section>
+
+
+      <!-- ---------------- Spend Management ---------------- -->
+
+      <section class="panel" id="panel-spend" role="tabpanel" aria-labelledby="tab-btn-spend" hidden>
+
+        <h2>Spend Management</h2>
+
+        <p class="page-sub">
+
+          Raise a purchase order against an approved contract and send it to the supplier. The contract
+
+          fixes the counterparty, currency and payment terms, and caps how much can be committed.
+
+        </p>
+
+        <div class="mt-4" id="spend-mount"></div>
+
+      </section>
+
+
+      <!-- ---------------- Reporting ---------------- -->
+
+      <section class="panel" id="panel-reports" role="tabpanel" aria-labelledby="tab-btn-reports" hidden>
+
+        <h2>Reporting &amp; Analytics</h2>
+
+        <div class="mt-4" id="reports-mount"></div>
+
+      </section>
+
+
       <!-- ---------------- Admin ---------------- -->
       <section class="panel" id="panel-admin" role="tabpanel" aria-labelledby="tab-btn-admin" hidden>
         <h1 class="page-title">User Administration</h1>
@@ -530,10 +591,11 @@
   <script src="js/validation.js"></script>
   <script src="js/demo-data.js"></script>
   <script src="js/store.js"></script>
+  <script src="js/ai/w9-bot.js"></script>
   <script src="js/components/alerts.js"></script>
   <script src="js/components/form.js"></script>
   <script src="js/components/table.js"></script>
-  <script src="js/components/genie.js"></script>
+  <script src="js/components/supplier-agent.js"></script>
   <script src="js/rfp/rfp-data.js"></script>
   <script src="js/rfp/rfp-store.js"></script>
   <script src="js/components/rfp-vendors.js"></script>
@@ -543,6 +605,12 @@
   <script src="js/components/rfp.js"></script>
   <script src="js/admin/admin-data.js"></script>
   <script src="js/admin/admin-store.js"></script>
+  <script src="js/contracts/contract-data.js"></script>
+  <script src="js/contracts/contract-store.js"></script>
+  <script src="js/spend/spend-store.js"></script>
+  <script src="js/components/contracts.js"></script>
+  <script src="js/components/spend.js"></script>
+  <script src="js/components/reports.js"></script>
   <script src="js/components/admin.js"></script>
   <script src="js/components/auth-gate.js"></script>
   <script src="js/app.js"></script>
