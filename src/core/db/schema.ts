@@ -20,12 +20,14 @@ export * from "@/modules/user_admin/schema";
 export * from "@/modules/suppliers/schema";
 export * from "@/modules/contracts/schema";
 export * from "@/modules/spend/schema";
+export * from "@/modules/product/schema";
 
 import * as authSchema from "@/modules/auth/schema";
 import * as userAdminSchema from "@/modules/user_admin/schema";
 import * as suppliersSchema from "@/modules/suppliers/schema";
 import * as contractsSchema from "@/modules/contracts/schema";
 import * as spendSchema from "@/modules/spend/schema";
+import * as productSchema from "@/modules/product/schema";
 
 export const schema = {
   ...authSchema,
@@ -33,6 +35,7 @@ export const schema = {
   ...suppliersSchema,
   ...contractsSchema,
   ...spendSchema,
+  ...productSchema,
 };
 
 export type Schema = typeof schema;

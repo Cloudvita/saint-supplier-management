@@ -18,8 +18,8 @@ import { pmemRequest } from "./pmem-client";
  * Product knowledge graph queries.
  *
  * Read-only by design: the graph is built by importing engineering files in
- * PMem. This module owns no tables yet — the supplier ↔ part link that ties
- * the graph to procurement data is the next step.
+ * PMem. What SAINT adds on top — which supplier makes which part — lives in
+ * `sourcing.service.ts`.
  */
 
 /** Find parts, assemblies and other graph nodes by name, label or id. */

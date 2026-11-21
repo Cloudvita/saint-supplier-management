@@ -6,6 +6,12 @@ import {
   getPartLinks,
   searchParts,
 } from "./services/product.service";
+import {
+  linkSupplierToPart,
+  listPartsForSupplier,
+  listSourcesForPart,
+} from "./services/sourcing.service";
+import { linkSupplierSchema, partSourceStatuses } from "./domain/sourcing";
 
 /**
  * Product knowledge graph capabilities for the AI layer.
@@ -122,9 +128,86 @@ export const productSimilarParts = defineAgentTool({
   handler: async (input) => findSimilarParts(input.partName, input.limit),
 });
 
+/* ------------------------- supplier ↔ part links ------------------------- */
+
+const partSourceView = z.object({
+  id: z.string(),
+  partId: z.string(),
+  partName: z.string(),
+  supplierId: z.string(),
+  status: z.enum(partSourceStatuses),
+  supplierPartNumber: nullableText,
+  unitPrice: z.number().nullable(),
+  currency: z.string(),
+  leadTimeDays: z.number().nullable(),
+  notes: nullableText,
+  updatedAt: z.string(),
+});
+
+const supplierSummary = z.object({
+  id: z.string(),
+  supplierCode: z.string(),
+  legalName: z.string(),
+  status: z.string(),
+  openRiskAlerts: z.number(),
+});
+
+export const productPartSuppliers = defineAgentTool({
+  name: "product_part_suppliers",
+  module: "product",
+  description:
+    "Which suppliers can make a part: approved, candidate and suspended sources with price, lead " +
+    "time, supplier status and open risk alerts, plus whether the part is single-sourced. Takes a " +
+    "part id from product_search_parts.",
+  permission: "product:read",
+  input: z.object({ partId: z.string().min(1) }),
+  output: z.object({
+    partId: z.string(),
+    partName: z.string().nullable(),
+    approvedCount: z.number(),
+    soleSource: z.boolean(),
+    sources: z.array(partSourceView.extend({ supplier: supplierSummary.nullable() })),
+  }),
+  handler: async (input) => listSourcesForPart(input.partId),
+});
+
+export const productSupplierParts = defineAgentTool({
+  name: "product_supplier_parts",
+  module: "product",
+  description:
+    "Every part a supplier is linked to, and for each one how many approved sources it has. Parts " +
+    "flagged soleSource have this supplier as their only approved source — they are what is at risk " +
+    "if the supplier fails, is acquired or is blocked. Resolve the supplier with suppliers_search first.",
+  permission: "product:read",
+  input: z.object({ supplierId: z.string().min(1) }),
+  output: z.object({
+    supplier: supplierSummary,
+    parts: z.array(partSourceView.extend({ approvedSourceCount: z.number(), soleSource: z.boolean() })),
+    soleSourceCount: z.number(),
+  }),
+  handler: async (input) => listPartsForSupplier(input.supplierId),
+});
+
+export const productLinkSupplier = defineAgentTool({
+  name: "product_link_supplier",
+  module: "product",
+  description:
+    "Record that a supplier can make a part, with optional price, lead time and supplier part number. " +
+    "Creates the link as CANDIDATE unless told otherwise; only approve a source when the user says " +
+    "it is qualified. Needs the part id and name from product_search_parts and a supplier id.",
+  permission: "product:write",
+  mutates: true,
+  input: linkSupplierSchema,
+  output: partSourceView,
+  handler: async (input, ctx) => linkSupplierToPart(input, ctx.userId),
+});
+
 export const productAgentTools: AgentToolDefinition[] = [
   searchProductParts,
   productPartLinks,
   productChangeImpact,
   productSimilarParts,
+  productPartSuppliers,
+  productSupplierParts,
+  productLinkSupplier,
 ] as unknown as AgentToolDefinition[];

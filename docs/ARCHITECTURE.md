@@ -37,7 +37,7 @@ saint-app/
 │   │   ├── contracts/        # lifecycle, clause audit, renewals, e-signature
 │   │   ├── spend/            # requisitions, POs, receipts, invoices, budgets
 │   │   ├── reports/          # cross-module dashboards, metrics, export engine
-│   │   ├── product/          # product knowledge graph, read through PMem
+│   │   ├── product/          # product graph (via PMem), supplier ↔ part links
 │   │   └── ai_agents/        # tool registry, mode routing, agent gateway
 │   │
 │   ├── bootstrap/            # composition root (seeding)
