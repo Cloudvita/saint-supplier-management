@@ -10,6 +10,7 @@ export const GET = withRoute("spend.po.list", async (req) => {
   return ok({
     purchaseOrders: await listPurchaseOrders({
       supplierId: url.searchParams.get("supplierId") ?? undefined,
+      partId: url.searchParams.get("partId") ?? undefined,
       status: (url.searchParams.get("status") as never) ?? undefined,
       limit: intParam(url, "limit", 25, 100),
     }),

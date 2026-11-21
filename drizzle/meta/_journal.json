@@ -29,6 +29,13 @@
       "when": 1795292097961,
       "tag": "0003_part_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795293073176,
+      "tag": "0004_spend_part_links",
+      "breakpoints": true
     }
   ]
 }

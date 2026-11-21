@@ -9,6 +9,18 @@ const optionalString = z.preprocess(
   z.string().optional()
 );
 
+/**
+ * The part a buy is for, from the product graph. `partName` is only needed
+ * for a part no supplier is linked to yet — see `confirmPart` in `/product`.
+ */
+const partFields = {
+  partId: optionalString,
+  partName: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().max(300).optional()
+  ),
+};
+
 export const requisitionSchema = z.object({
   description: z.string().min(5, "Describe what is being bought").max(2000),
   amount: z.coerce.number().positive("Amount must be greater than zero"),
@@ -18,6 +30,7 @@ export const requisitionSchema = z.object({
   category: optionalString,
   competitiveBids: z.coerce.number().int().min(0).default(0),
   soleSourceJustification: optionalString,
+  ...partFields,
 });
 
 export const purchaseOrderSchema = z.object({
@@ -36,6 +49,7 @@ export const purchaseOrderSchema = z.object({
   ),
   competitiveBids: z.coerce.number().int().min(0).default(0),
   soleSourceJustification: optionalString,
+  ...partFields,
 });
 
 export const invoiceSchema = z.object({

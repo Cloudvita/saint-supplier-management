@@ -24,6 +24,8 @@ export const POST = withRoute("spend.policy-check", async (req) => {
       supplierId: z.string().optional(),
       competitiveBids: z.coerce.number().int().min(0).default(0),
       soleSourceJustification: z.string().optional(),
+      partId: z.string().optional(),
+      partName: z.string().max(300).optional(),
     })
   );
 

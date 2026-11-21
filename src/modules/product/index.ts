@@ -20,6 +20,8 @@ export {
   removePartSource,
   listSourcesForPart,
   listPartsForSupplier,
+  confirmPart,
+  getPartSourceStatus,
   type PartSourceView,
   type SupplierSummary,
 } from "./services/sourcing.service";
