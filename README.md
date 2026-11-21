@@ -17,7 +17,7 @@ service that serves the product knowledge graph.
 | `/contracts` | Lifecycle, metadata extraction, clause audit, renewals, e-signature |
 | `/spend` | Requisitions, POs, goods receipts, invoices, budgets, 3-way match |
 | `/reports` | Cross-module dashboards, metric pipeline, export engine (owns no tables) |
-| `/product` | Product knowledge graph — part search, where-used, change impact — read from PMem (owns no tables yet) |
+| `/product` | Product knowledge graph — part search, where-used, change impact — read from PMem; supplier ↔ part links and sole-source exposure |
 | `/ai-agents` | Tool registry, mode routing, gateway to the LangGraph service |
 
 Each module exposes exactly one public entry point (`index.ts`). Reaching past a barrel, or
@@ -92,7 +92,8 @@ npm run pmem:dev              # http://127.0.0.1:8100 (8000 is the agent service
 
 Load engineering files (STEP, XSD, XMI, PLMXML) through PMem's own UI in `PMem/frontend`.
 PMem has no authentication: keep it on a network only SAINT can reach. After pulling
-this change, run `npm run db:seed` once so existing roles pick up `product:read`.
+the product changes, run `npm run db:migrate` (adds `part_sources`) and `npm run db:seed` once so
+existing roles pick up `product:read` and `product:write`.
 
 ## Scripts
 
@@ -121,11 +122,16 @@ this change, run `npm run db:seed` once so existing roles pick up `product:read`
 | `GET` | `/api/product/parts?q=&limit=` | Search parts and assemblies in the product graph |
 | `GET` | `/api/product/parts/[id]/links` | What a part is directly connected to (where-used) |
 | `POST` | `/api/product/change-impact` | `{partName}` → parts, assemblies, requirements a change touches |
+| `GET` `POST` | `/api/product/parts/[id]/sources` | Suppliers that can make a part / link one `{partName, supplierId, status?, unitPrice?, leadTimeDays?}` |
+| `PATCH` `DELETE` | `/api/product/sources/[id]` | Change a link's status or terms / remove it |
+| `GET` | `/api/product/suppliers/[id]/parts` | Parts a supplier makes, flagging those where it is the only approved source |
 | `GET` | `/api/health` | App Runner health check |
 
 ## Data model
 
 `suppliers` → `w9_documents`, `market_news_items`, `risk_alerts` (all cascade on delete).
+`part_sources` links a PMem graph part (`part_id`) to a supplier (`supplier_id`); neither is a
+foreign key, so both are checked when a link is made.
 Schema lives in `src/db/schema.ts`; migrations in `drizzle/`.
 
 ## Swapping the news provider
