@@ -15,6 +15,7 @@ import {
 import { getUserStats } from "@/modules/user_admin";
 import { metric, share, tailSpendShare, type Metric } from "../domain/metrics";
 import { render, type ExportColumn, type ExportFormat } from "../domain/export";
+import { listSupplyRiskImpacts } from "./supply-risk.service";
 
 const log = createLogger("reports");
 
@@ -37,7 +38,7 @@ export type ExecutiveDashboard = {
 
 /** The cross-module executive view: supply base, contracts, spend and risk in one call. */
 export async function getExecutiveDashboard(): Promise<ExecutiveDashboard> {
-  const [supplierStats, contractStats, spendStats, userStats, categories, bySupplier, alerts, expiring] =
+  const [supplierStats, contractStats, spendStats, userStats, categories, bySupplier, alerts, expiring, supplyRisk] =
     await Promise.all([
       getSupplierStats(),
       getContractStats(),
@@ -47,7 +48,11 @@ export async function getExecutiveDashboard(): Promise<ExecutiveDashboard> {
       getSpendBySupplier(200),
       listAlerts({ limit: 5 }),
       getExpiringContracts(),
+      listSupplyRiskImpacts(),
     ]);
+
+  const atRiskParts = supplyRisk.flatMap((i) => i.soleSourceParts);
+  const atRiskOrderValue = atRiskParts.reduce((s, p) => s + p.openOrderValue, 0);
 
   const tail = tailSpendShare(bySupplier.map((r) => ({ totalSpend: Number(r.totalSpend) })));
 
@@ -104,6 +109,16 @@ export async function getExecutiveDashboard(): Promise<ExecutiveDashboard> {
     ),
     metric("tail_spend_share", "Tail spend share", tail.tailSharePct, "PERCENT", "LOWER_IS_BETTER", `${tail.tailSuppliers} suppliers outside the top 20.`),
     metric("open_risk_alerts", "Open supplier risk alerts", alerts.length, "COUNT", "LOWER_IS_BETTER"),
+    metric(
+      "sole_source_parts_at_risk",
+      "Sole-source parts at risk",
+      atRiskParts.length,
+      "COUNT",
+      "LOWER_IS_BETTER",
+      atRiskParts.length > 0
+        ? `Parts whose only approved source has an open risk alert; ${Math.round(atRiskOrderValue)} on open order.`
+        : undefined
+    ),
     metric("platform_users", "Platform users", userStats.active, "COUNT"),
   ];
 
@@ -139,6 +154,7 @@ export const REPORT_KEYS = [
   "invoice_exceptions",
   "expiring_contracts",
   "executive_metrics",
+  "supply_risk",
 ] as const;
 
 export type ReportKey = (typeof REPORT_KEYS)[number];
@@ -219,6 +235,33 @@ async function buildDataset(key: ReportKey): Promise<Dataset> {
           col("daysToExpiry", "Days To Expiry"),
           col("renewalType", "Renewal"),
           col("totalValue", "Value"),
+        ],
+      };
+    }
+    case "supply_risk": {
+      // One row per part that loses its only approved source if the supplier fails.
+      const impacts = await listSupplyRiskImpacts();
+      const rows = impacts.flatMap((i) =>
+        i.soleSourceParts.map((p) => ({
+          supplier: i.supplier.legalName,
+          supplierCode: i.supplier.supplierCode,
+          severity: i.severity,
+          alerts: i.alerts.map((a) => a.eventType).join(", "),
+          part: p.partName,
+          openOrders: p.openOrders.length,
+          openOrderValue: p.openOrderValue,
+        }))
+      );
+      return {
+        rows,
+        columns: [
+          col("supplierCode", "Supplier Code"),
+          col("supplier", "Supplier"),
+          col("severity", "Severity"),
+          col("alerts", "Alerts"),
+          col("part", "Sole-Source Part"),
+          col("openOrders", "Open POs"),
+          col("openOrderValue", "Open PO Value"),
         ],
       };
     }

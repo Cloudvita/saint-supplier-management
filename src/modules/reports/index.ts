@@ -16,6 +16,12 @@ export {
 } from "./services/report.service";
 
 export {
+  getSupplyRiskImpact,
+  listSupplyRiskImpacts,
+  type SupplyRiskImpact,
+} from "./services/supply-risk.service";
+
+export {
   render,
   toCsv,
   toMarkdown,
