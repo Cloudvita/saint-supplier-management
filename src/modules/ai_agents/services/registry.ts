@@ -14,6 +14,7 @@ import { supplierAgentTools } from "@/modules/suppliers";
 import { contractAgentTools } from "@/modules/contracts";
 import { spendAgentTools } from "@/modules/spend";
 import { reportAgentTools } from "@/modules/reports";
+import { productAgentTools } from "@/modules/product";
 
 const log = createLogger("ai_agents.registry");
 
@@ -32,6 +33,7 @@ const MODULE_TOOLS: Record<string, AgentToolDefinition[]> = {
   contracts: contractAgentTools,
   spend: spendAgentTools,
   reports: reportAgentTools,
+  product: productAgentTools,
 };
 
 let index: Map<string, AgentToolDefinition> | null = null;

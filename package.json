@@ -16,6 +16,7 @@
     "db:studio": "drizzle-kit studio",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "agent:dev": "cd backend && ./venv/bin/uvicorn saint_agents.main:app --reload --port 8000",
+    "pmem:dev": "cd PMem && PYTHONPATH=. backend/.venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8100 --reload --reload-dir backend",
     "verify": "npm run typecheck && npm run check:boundaries"
   },
   "dependencies": {

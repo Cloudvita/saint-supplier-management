@@ -1,7 +1,8 @@
 # SAINT — Source-to-Procure Platform
 
-A **modular monolith**: one Next.js application partitioned into seven domain modules with
-enforced boundaries, plus a Python LangGraph service that runs the AI agents.
+A **modular monolith**: one Next.js application partitioned into eight domain modules with
+enforced boundaries, plus a Python LangGraph service that runs the AI agents and the PMem
+service that serves the product knowledge graph.
 
 > **Architecture:** see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the module map, the
 > boundary rules, and how the LangChain integration works.
@@ -16,6 +17,7 @@ enforced boundaries, plus a Python LangGraph service that runs the AI agents.
 | `/contracts` | Lifecycle, metadata extraction, clause audit, renewals, e-signature |
 | `/spend` | Requisitions, POs, goods receipts, invoices, budgets, 3-way match |
 | `/reports` | Cross-module dashboards, metric pipeline, export engine (owns no tables) |
+| `/product` | Product knowledge graph — part search, where-used, change impact — read from PMem (owns no tables yet) |
 | `/ai-agents` | Tool registry, mode routing, gateway to the LangGraph service |
 
 Each module exposes exactly one public entry point (`index.ts`). Reaching past a barrel, or
@@ -73,6 +75,25 @@ npm run dev                   # http://localhost:3000
 Textract and SES calls need AWS credentials. Without them the app still runs — W-9
 extraction returns a clear error and alerts are logged instead of emailed.
 
+### Product knowledge graph (optional)
+
+The `/product` module reads parts and assemblies from PMem, a separate Python service
+in `PMem/backend` backed by Neo4j. SAINT runs without it; product routes and agent tools
+then answer `502` with a hint to start it.
+
+```bash
+cd PMem/backend
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+# create PMem/backend/.env with NEO4J_URI, NEO4J_USER, NEO4J_PASS, NEO4J_DATABASE
+cd ../..
+npm run pmem:dev              # http://127.0.0.1:8100 (8000 is the agent service)
+```
+
+Load engineering files (STEP, XSD, XMI, PLMXML) through PMem's own UI in `PMem/frontend`.
+PMem has no authentication: keep it on a network only SAINT can reach. After pulling
+this change, run `npm run db:seed` once so existing roles pick up `product:read`.
+
 ## Scripts
 
 | Script | Purpose |
@@ -97,6 +118,9 @@ extraction returns a clear error and alerts are logged instead of emailed.
 | `POST` | `/api/news/preview` | Fetch + classify news for an unsaved company |
 | `POST` | `/api/news/refresh` | `{supplierId}` one supplier, or `{cadence}` batch (Bearer `CRON_SECRET`) |
 | `GET` `PATCH` | `/api/alerts` | List / update risk alerts |
+| `GET` | `/api/product/parts?q=&limit=` | Search parts and assemblies in the product graph |
+| `GET` | `/api/product/parts/[id]/links` | What a part is directly connected to (where-used) |
+| `POST` | `/api/product/change-impact` | `{partName}` → parts, assemblies, requirements a change touches |
 | `GET` | `/api/health` | App Runner health check |
 
 ## Data model
