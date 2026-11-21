@@ -6,6 +6,7 @@ import { createLogger } from "@/core/logger";
 import { round2, sequenceCode } from "@/shared/utils";
 import { getEffectiveAuthorisation } from "@/modules/user_admin";
 import { getActiveContractsForSupplier } from "@/modules/contracts";
+import { confirmPart, getPartSourceStatus } from "@/modules/product";
 import { budgets, goodsReceipts, invoices, purchaseOrders, requisitions } from "../schema";
 import {
   checkPurchasePolicy,
@@ -46,6 +47,12 @@ async function loadBudget(budgetId?: string | null) {
   return row ?? null;
 }
 
+type ConfirmedPart = { id: string; name: string };
+
+async function loadPart(partId?: string | null, partName?: string | null): Promise<ConfirmedPart | null> {
+  return partId ? confirmPart(partId, partName) : null;
+}
+
 /* --------------------------- requisitions ------------------------ */
 
 /**
@@ -54,6 +61,7 @@ async function loadBudget(budgetId?: string | null) {
  */
 export async function createRequisition(input: RequisitionInput, requesterId: string) {
   const classification = classifySpend(input.description, input.category);
+  const part = await loadPart(input.partId, input.partName);
 
   let onContract = false;
   let contractId: string | undefined;
@@ -72,6 +80,8 @@ export async function createRequisition(input: RequisitionInput, requesterId: st
         requesterId,
         supplierId: input.supplierId,
         budgetId: input.budgetId,
+        partId: part?.id,
+        partName: part?.name,
         description: input.description,
         commodityCode: classification.commodityCode,
         category: input.category ?? classification.segment,
@@ -95,11 +105,17 @@ export async function createRequisition(input: RequisitionInput, requesterId: st
   return { ...row, classification };
 }
 
-export async function listRequisitions(opts: { status?: (typeof requisitions.status.enumValues)[number]; limit?: number } = {}) {
+export async function listRequisitions(
+  opts: { status?: (typeof requisitions.status.enumValues)[number]; partId?: string; limit?: number } = {}
+) {
+  const filters = [];
+  if (opts.status) filters.push(eq(requisitions.status, opts.status));
+  if (opts.partId) filters.push(eq(requisitions.partId, opts.partId));
+
   return db
     .select()
     .from(requisitions)
-    .where(opts.status ? eq(requisitions.status, opts.status) : undefined)
+    .where(filters.length ? and(...filters) : undefined)
     .orderBy(desc(requisitions.createdAt))
     .limit(Math.min(opts.limit ?? 25, 100));
 }
@@ -113,7 +129,7 @@ export async function listRequisitions(opts: { status?: (typeof requisitions.sta
  * buyer's UI and the AI layer need to *ask* whether something would pass
  * before anyone tries it.
  */
-export async function evaluatePurchasePolicy(input: {
+type PolicyRequest = {
   amount: number;
   currency?: string;
   approverId: string;
@@ -121,7 +137,18 @@ export async function evaluatePurchasePolicy(input: {
   supplierId?: string | null;
   competitiveBids?: number;
   soleSourceJustification?: string | null;
-}): Promise<PolicyDecision & { approvalLimit: number | null; budgetRemaining: number | null }> {
+};
+
+type PolicyResult = PolicyDecision & { approvalLimit: number | null; budgetRemaining: number | null };
+
+export async function evaluatePurchasePolicy(
+  input: PolicyRequest & { partId?: string | null; partName?: string | null }
+): Promise<PolicyResult> {
+  return runPurchasePolicy(input, await loadPart(input.partId, input.partName));
+}
+
+/** The controls, for a part that has already been confirmed (or none). */
+async function runPurchasePolicy(input: PolicyRequest, part: ConfirmedPart | null): Promise<PolicyResult> {
   // The system actor (scheduled jobs, seeding) has no user row and no DOA
   // ceiling; everything else must resolve to a real, active user.
   const approvalLimit =
@@ -135,6 +162,11 @@ export async function evaluatePurchasePolicy(input: {
     onContract = (await getActiveContractsForSupplier(input.supplierId)).length > 0;
   }
 
+  const partSourcing =
+    part && input.supplierId
+      ? { partName: part.name, sourceStatus: await getPartSourceStatus(part.id, input.supplierId) }
+      : null;
+
   const decision = checkPurchasePolicy({
     amount: input.amount,
     currency: input.currency ?? "USD",
@@ -143,6 +175,7 @@ export async function evaluatePurchasePolicy(input: {
     onContract,
     competitiveBids: input.competitiveBids ?? 0,
     soleSourceJustification: input.soleSourceJustification,
+    partSourcing,
   });
 
   return {
@@ -161,15 +194,19 @@ export async function evaluatePurchasePolicy(input: {
  * there is no code path that writes a PO which the controls would have refused.
  */
 export async function issuePurchaseOrder(input: PurchaseOrderInput, issuedBy: string) {
-  const decision = await evaluatePurchasePolicy({
-    amount: input.amount,
-    currency: input.currency,
-    approverId: issuedBy,
-    budgetId: input.budgetId,
-    supplierId: input.supplierId,
-    competitiveBids: input.competitiveBids,
-    soleSourceJustification: input.soleSourceJustification,
-  });
+  const part = await partForPurchaseOrder(input);
+  const decision = await runPurchasePolicy(
+    {
+      amount: input.amount,
+      currency: input.currency,
+      approverId: issuedBy,
+      budgetId: input.budgetId,
+      supplierId: input.supplierId,
+      competitiveBids: input.competitiveBids,
+      soleSourceJustification: input.soleSourceJustification,
+    },
+    part
+  );
 
   if (!decision.approved) {
     throw AppError.policy("Purchase order blocked by procurement policy", {
@@ -187,6 +224,8 @@ export async function issuePurchaseOrder(input: PurchaseOrderInput, issuedBy: st
         supplierId: input.supplierId,
         contractId: input.contractId,
         budgetId: input.budgetId,
+        partId: part?.id,
+        partName: part?.name,
         description: input.description,
         category: input.category,
         amount: input.amount,
@@ -222,9 +261,31 @@ export async function issuePurchaseOrder(input: PurchaseOrderInput, issuedBy: st
   return { purchaseOrder: po, warnings: decision.warnings };
 }
 
-export async function listPurchaseOrders(opts: { supplierId?: string; status?: (typeof purchaseOrders.status.enumValues)[number]; limit?: number } = {}) {
+/**
+ * The part a PO buys: the one it names, or else the one on the requisition
+ * it converts. A requisition's part was confirmed when it was raised.
+ */
+async function partForPurchaseOrder(input: PurchaseOrderInput): Promise<ConfirmedPart | null> {
+  if (input.partId) return loadPart(input.partId, input.partName);
+  if (!input.requisitionId) return null;
+  const [req] = await db
+    .select({ partId: requisitions.partId, partName: requisitions.partName })
+    .from(requisitions)
+    .where(eq(requisitions.id, input.requisitionId));
+  return req?.partId && req.partName ? { id: req.partId, name: req.partName } : null;
+}
+
+export async function listPurchaseOrders(
+  opts: {
+    supplierId?: string;
+    partId?: string;
+    status?: (typeof purchaseOrders.status.enumValues)[number];
+    limit?: number;
+  } = {}
+) {
   const filters = [];
   if (opts.supplierId) filters.push(eq(purchaseOrders.supplierId, opts.supplierId));
+  if (opts.partId) filters.push(eq(purchaseOrders.partId, opts.partId));
   if (opts.status) filters.push(eq(purchaseOrders.status, opts.status));
 
   return db

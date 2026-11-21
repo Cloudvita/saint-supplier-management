@@ -8,6 +8,9 @@ import { round2, variancePct } from "@/shared/utils";
  *   2. Single-source spend above the threshold needs a documented justification.
  *   3. Invoices must pass a three-way match before payment.
  *
+ * plus, when a buy names a product-graph part, a check that the supplier is
+ * an approved source for it.
+ *
  * Keeping them free of database access means the same rule that blocks a
  * purchase order in the UI is the rule an agent quotes when asked "can I buy
  * this?", with no chance of the two drifting apart.
@@ -53,6 +56,14 @@ export type PurchaseCheck = {
   onContract: boolean;
   competitiveBids: number;
   soleSourceJustification?: string | null;
+  /**
+   * Set when the buy names a part and a supplier: the part, and the supplier's
+   * status as a source of it (null when it has no link to the part).
+   */
+  partSourcing?: {
+    partName: string;
+    sourceStatus: "APPROVED" | "CANDIDATE" | "SUSPENDED" | null;
+  } | null;
 };
 
 /**
@@ -61,6 +72,10 @@ export type PurchaseCheck = {
  * A missing budget line, insufficient headroom, an over-limit approver, or an
  * unjustified single-source award above the threshold all BLOCK. Off-contract
  * (maverick) buying WARNs — it is a leakage signal, not an illegal act.
+ *
+ * For a named part, buying from a SUSPENDED source BLOCKs — someone decided
+ * that supplier must not be used for it. A candidate or unlinked supplier
+ * WARNs, the same way off-contract spend does.
  */
 export function checkPurchasePolicy(input: PurchaseCheck): PolicyDecision {
   const found: PolicyViolation[] = [];
@@ -109,6 +124,27 @@ export function checkPurchasePolicy(input: PurchaseCheck): PolicyDecision {
       message: `Single-source award of ${input.currency} ${round2(input.amount)} is at or above the ${SOLE_SOURCE_THRESHOLD_USD} threshold and has no documented sole-source justification.`,
       severity: "BLOCK",
     });
+  }
+
+  // --- Approved source for the part ---
+  const sourcing = input.partSourcing;
+  if (sourcing && sourcing.sourceStatus !== "APPROVED") {
+    found.push(
+      sourcing.sourceStatus === "SUSPENDED"
+        ? {
+            control: "APPROVED_SOURCE",
+            message: `This supplier is suspended as a source of ${sourcing.partName}.`,
+            severity: "BLOCK",
+          }
+        : {
+            control: "APPROVED_SOURCE",
+            message:
+              sourcing.sourceStatus === "CANDIDATE"
+                ? `This supplier is only a candidate source of ${sourcing.partName}, not yet approved.`
+                : `This supplier is not a recorded source of ${sourcing.partName}.`,
+            severity: "WARN",
+          }
+    );
   }
 
   // --- Leakage signal ---

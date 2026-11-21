@@ -28,8 +28,9 @@ export const checkPurchaseAllowed = defineAgentTool({
   module: "spend",
   description:
     "Check a proposed purchase against the procurement controls: budget headroom, the approver's " +
-    "delegation-of-authority limit, and the sole-source justification requirement. Always call this " +
-    "before telling a user they can go ahead with a buy.",
+    "delegation-of-authority limit, the sole-source justification requirement and — when a part is " +
+    "given — whether the supplier is an approved source of that part. Always call this before " +
+    "telling a user they can go ahead with a buy.",
   permission: "spend:read",
   input: z.object({
     amount: z.number().positive().describe("Committed amount"),
@@ -39,6 +40,8 @@ export const checkPurchaseAllowed = defineAgentTool({
     supplier: z.string().optional().describe("Supplier code or legal name"),
     competitiveBids: z.number().int().min(0).default(0).describe("How many competing bids were received"),
     soleSourceJustification: z.string().optional(),
+    partId: z.string().optional().describe("Product-graph part id, from product_search_parts"),
+    partName: z.string().max(300).optional().describe("The part's name, with partId"),
   }),
   output: policyDecisionSchema.extend({
     approvalLimit: z.number().nullable(),
@@ -221,11 +224,13 @@ export const openCommitments = defineAgentTool({
   name: "spend_open_commitments",
   module: "spend",
   description:
-    "Open purchase orders, optionally for one supplier. Use to size exposure to a vendor before " +
-    "advising on a risk event affecting it.",
+    "Open purchase orders, optionally for one supplier and/or one product-graph part. Use to size " +
+    "exposure to a vendor before advising on a risk event affecting it, or to find what is on order " +
+    "for a part that is changing.",
   permission: "spend:read",
   input: z.object({
     supplier: z.string().optional().describe("Supplier code or legal name"),
+    partId: z.string().optional().describe("Product-graph part id, from product_search_parts"),
     limit: z.number().int().min(1).max(50).default(20),
   }),
   output: z.object({
@@ -233,6 +238,7 @@ export const openCommitments = defineAgentTool({
       z.object({
         poNumber: z.string(),
         supplierId: z.string(),
+        partName: z.string().nullable(),
         description: z.string(),
         amount: z.number(),
         currency: z.string(),
@@ -248,11 +254,12 @@ export const openCommitments = defineAgentTool({
       if (!s) throw AppError.notFound(`Supplier "${input.supplier}"`);
       supplierId = s.id;
     }
-    const rows = await listPurchaseOrders({ supplierId, status: "OPEN", limit: input.limit });
+    const rows = await listPurchaseOrders({ supplierId, partId: input.partId, status: "OPEN", limit: input.limit });
     return {
       orders: rows.map((p) => ({
         poNumber: p.poNumber,
         supplierId: p.supplierId,
+        partName: p.partName,
         description: p.description,
         amount: p.amount,
         currency: p.currency,

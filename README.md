@@ -34,7 +34,7 @@ importing another module's tables, fails `npm run verify`.
 | Weekly / monthly market news | Pluggable news provider → keyword risk classifier → digest written into the supplier's Market News field |
 | M&A / bankruptcy / dispute alerts | Classifier raises a `risk_alert`, emails the procurement manager via Amazon SES |
 | Contract clause compliance | Deterministic audit; a contract missing GDPR / liability / termination-for-convenience cannot be sent for signature |
-| Purchase controls | Budget headroom + delegation of authority + sole-source justification, enforced in `spend/domain/policy.ts` |
+| Purchase controls | Budget headroom + delegation of authority + sole-source justification + approved source for a named part, enforced in `spend/domain/policy.ts` |
 | Invoice three-way match | PO vs goods receipt vs invoice, with relative and absolute tolerance |
 | Conversational AI | 25 tools across 6 modules, exposed to LangChain agents in four operational modes |
 
@@ -92,7 +92,7 @@ npm run pmem:dev              # http://127.0.0.1:8100 (8000 is the agent service
 
 Load engineering files (STEP, XSD, XMI, PLMXML) through PMem's own UI in `PMem/frontend`.
 PMem has no authentication: keep it on a network only SAINT can reach. After pulling
-the product changes, run `npm run db:migrate` (adds `part_sources`) and `npm run db:seed` once so
+the product changes, run `npm run db:migrate` (adds `part_sources` and part columns on requisitions and POs) and `npm run db:seed` once so
 existing roles pick up `product:read` and `product:write`.
 
 ## Scripts
@@ -131,7 +131,9 @@ existing roles pick up `product:read` and `product:write`.
 
 `suppliers` → `w9_documents`, `market_news_items`, `risk_alerts` (all cascade on delete).
 `part_sources` links a PMem graph part (`part_id`) to a supplier (`supplier_id`); neither is a
-foreign key, so both are checked when a link is made.
+foreign key, so both are checked when a link is made. `requisitions` and `purchase_orders`
+carry an optional `part_id` / `part_name` for the part being bought; a PO raised from a
+requisition inherits its part.
 Schema lives in `src/db/schema.ts`; migrations in `drizzle/`.
 
 ## Swapping the news provider

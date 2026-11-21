@@ -3,8 +3,9 @@
  * and the procurement control set.
  *
  * Owns tables: budgets, requisitions, purchase_orders, goods_receipts, invoices.
- * Depends on `/user-admin` (approval limits) and `/contracts` (contract cover)
- * through their public barrels only.
+ * Depends on `/user-admin` (approval limits), `/contracts` (contract cover) and
+ * `/product` (the part being bought, and its approved sources) through their
+ * public barrels only.
  */
 export {
   listBudgets,

@@ -10,6 +10,7 @@ export const GET = withRoute("spend.requisitions.list", async (req) => {
   return ok({
     requisitions: await listRequisitions({
       status: (url.searchParams.get("status") as never) ?? undefined,
+      partId: url.searchParams.get("partId") ?? undefined,
       limit: intParam(url, "limit", 25, 100),
     }),
   });

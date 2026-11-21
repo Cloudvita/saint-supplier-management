@@ -62,6 +62,10 @@ export const requisitions = pgTable(
     supplierId: text("supplier_id"),
     budgetId: text("budget_id").references(() => budgets.id),
 
+    /** Product-graph part this buys, when it is a specific part (see `/product`). */
+    partId: text("part_id"),
+    partName: varchar("part_name", { length: 300 }),
+
     description: text("description").notNull(),
     /** UNSPSC / eCl@ss taxonomy code assigned during classification. */
     commodityCode: varchar("commodity_code", { length: 20 }),
@@ -99,6 +103,10 @@ export const purchaseOrders = pgTable(
     contractId: text("contract_id"),
     budgetId: text("budget_id").references(() => budgets.id),
 
+    /** Product-graph part this buys, when it is a specific part (see `/product`). */
+    partId: text("part_id"),
+    partName: varchar("part_name", { length: 300 }),
+
     description: text("description").notNull(),
     category: varchar("category", { length: 120 }),
     amount: doublePrecision("amount").notNull(),
@@ -114,6 +122,7 @@ export const purchaseOrders = pgTable(
   (t) => [
     index("purchase_orders_supplier_idx").on(t.supplierId),
     index("purchase_orders_status_idx").on(t.status),
+    index("purchase_orders_part_idx").on(t.partId),
   ]
 );
 

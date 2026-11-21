@@ -7,6 +7,7 @@ import { partSources, type PartSource } from "../schema";
 import {
   isSoleSource,
   type LinkSupplierInput,
+  type PartSourceStatus,
   type UpdatePartSourceInput,
 } from "../domain/sourcing";
 import { searchParts } from "./product.service";
@@ -95,6 +96,37 @@ async function resolvePart(partId: string, partName: string): Promise<{ id: stri
     throw AppError.notFound(`Part "${partName}" (${partId}) in the product graph`);
   }
   return { id: part.id, name: part.name };
+}
+
+/**
+ * Confirm a part id for another module (a requisition or PO naming a part)
+ * and return its name.
+ *
+ * A part SAINT has already linked to a supplier is taken from `part_sources`,
+ * so buying a known part keeps working while PMem is down. Only a part seen
+ * for the first time is looked up in PMem, which needs its name.
+ */
+export async function confirmPart(partId: string, partName?: string | null): Promise<{ id: string; name: string }> {
+  const known = await db.query.partSources.findFirst({
+    where: eq(partSources.partId, partId),
+    columns: { partId: true, partName: true },
+  });
+  if (known) return { id: known.partId, name: known.partName };
+  if (!partName?.trim()) {
+    throw AppError.validation("partName is required for a part no supplier is linked to yet", {
+      partName: ["Required"],
+    });
+  }
+  return resolvePart(partId, partName.trim());
+}
+
+/** The supplier's status as a source of the part, or null when it has no link to it. */
+export async function getPartSourceStatus(partId: string, supplierId: string): Promise<PartSourceStatus | null> {
+  const row = await db.query.partSources.findFirst({
+    where: and(eq(partSources.partId, partId), eq(partSources.supplierId, supplierId)),
+    columns: { status: true },
+  });
+  return row?.status ?? null;
 }
 
 /** Record that a supplier can make a part. One link per supplier and part. */
