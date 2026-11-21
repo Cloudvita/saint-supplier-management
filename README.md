@@ -33,6 +33,7 @@ importing another module's tables, fails `npm run verify`.
 | 10 most recent records on screen | Server-rendered table with expandable detail |
 | Weekly / monthly market news | Pluggable news provider → keyword risk classifier → digest written into the supplier's Market News field |
 | M&A / bankruptcy / dispute alerts | Classifier raises a `risk_alert`, emails the procurement manager via Amazon SES |
+| Supply-risk impact | For each supplier with an open alert: the parts it is the only approved source of, and the open POs behind them (`/reports`, dashboard metric, `supply_risk` export) |
 | Contract clause compliance | Deterministic audit; a contract missing GDPR / liability / termination-for-convenience cannot be sent for signature |
 | Purchase controls | Budget headroom + delegation of authority + sole-source justification + approved source for a named part, enforced in `spend/domain/policy.ts` |
 | Invoice three-way match | PO vs goods receipt vs invoice, with relative and absolute tolerance |
@@ -122,6 +123,7 @@ existing roles pick up `product:read` and `product:write`.
 | `GET` | `/api/product/parts?q=&limit=` | Search parts and assemblies in the product graph |
 | `GET` | `/api/product/parts/[id]/links` | What a part is directly connected to (where-used) |
 | `POST` | `/api/product/change-impact` | `{partName}` → parts, assemblies, requirements a change touches |
+| `GET` | `/api/reports/supply-risk?supplierId=` | Sole-source parts and open POs at stake per supplier with an open risk alert, worst first |
 | `GET` `POST` | `/api/product/parts/[id]/sources` | Suppliers that can make a part / link one `{partName, supplierId, status?, unitPrice?, leadTimeDays?}` |
 | `PATCH` `DELETE` | `/api/product/sources/[id]` | Change a link's status or terms / remove it |
 | `GET` | `/api/product/suppliers/[id]/parts` | Parts a supplier makes, flagging those where it is the only approved source |
