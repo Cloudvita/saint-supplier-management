@@ -25,18 +25,19 @@ export const AGENT_MODES: Record<AgentMode, ModeDefinition> = {
     mode: "SOURCING_ADVISOR",
     label: "Sourcing Advisor",
     intent: "RFx drafting, supplier selection, market analysis, negotiation preparation",
-    modules: ["suppliers", "contracts", "spend", "reports", "auth"],
+    modules: ["suppliers", "contracts", "spend", "reports", "product", "auth"],
     responsibilities: [
       "Generate comparative bid tables and weighted evaluation matrices",
       "Evaluate trade-offs across cost, SLA, ESG and delivery",
       "Draft negotiation talking points grounded in contract and spend data",
+      "Ground part-level sourcing advice in the product graph: where a part is used, what a change touches",
     ],
   },
   BUYER_COPILOT: {
     mode: "BUYER_COPILOT",
     label: "Buyer Co-pilot",
     intent: "Raising requisitions, approvals, catalogue and guided-buying questions",
-    modules: ["spend", "suppliers", "contracts", "user_admin", "auth"],
+    modules: ["spend", "suppliers", "contracts", "user_admin", "product", "auth"],
     responsibilities: [
       "Guide non-procurement users through guided buying",
       "Check the approval matrix and delegation-of-authority limits before advising",
@@ -100,7 +101,20 @@ export function routeMode(prompt: string): AgentMode {
     ],
     [
       "SOURCING_ADVISOR",
-      [/rfp|rfi|rfq|rfx/, /sourc/, /bid/, /tender/, /negotiat/, /vendor selection/, /supplier discovery/, /evaluat/],
+      [
+        /rfp|rfi|rfq|rfx/,
+        /sourc/,
+        /bid/,
+        /tender/,
+        /negotiat/,
+        /vendor selection/,
+        /supplier discovery/,
+        /evaluat/,
+        /\bparts?\b/,
+        /assembl/,
+        /\bbom\b/,
+        /engineering change/,
+      ],
     ],
   ];
 

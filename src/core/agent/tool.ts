@@ -11,6 +11,7 @@ export type ModuleName =
   | "contracts"
   | "spend"
   | "reports"
+  | "product"
   | "ai_agents";
 
 export type AgentToolDefinition<I extends z.ZodTypeAny = z.ZodTypeAny, O extends z.ZodTypeAny = z.ZodTypeAny> = {

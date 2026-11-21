@@ -1,10 +1,11 @@
 # SAINT — Modular Monolith Architecture
 
 SAINT is a **modular monolith**: one deployable Next.js application, partitioned
-into seven domain modules with enforced boundaries, plus a separate Python
-service that runs the LangChain/LangGraph agents.
+into eight domain modules with enforced boundaries, plus two Python services:
+one runs the LangChain/LangGraph agents, the other (PMem) serves the product
+knowledge graph from Neo4j.
 
-One deployable, seven domains. The boundaries are real — they are checked on
+One deployable, eight domains. The boundaries are real — they are checked on
 every `npm run verify` — but there is no network hop between them, no
 distributed transaction, and no service mesh to operate. When a module
 genuinely needs to become a service, its barrel is already the interface.
@@ -36,12 +37,14 @@ saint-app/
 │   │   ├── contracts/        # lifecycle, clause audit, renewals, e-signature
 │   │   ├── spend/            # requisitions, POs, receipts, invoices, budgets
 │   │   ├── reports/          # cross-module dashboards, metrics, export engine
+│   │   ├── product/          # product knowledge graph, read through PMem
 │   │   └── ai_agents/        # tool registry, mode routing, agent gateway
 │   │
 │   ├── bootstrap/            # composition root (seeding)
 │   └── app/                  # Next.js routes — thin adapters only
 │
 ├── backend/saint_agents/     # Python: LangGraph agents, prompts, LLM providers
+├── PMem/                     # Python + React: engineering-file import, product graph API
 └── scripts/check-boundaries.mjs
 ```
 
