@@ -10,7 +10,7 @@ import { EDGE_TYPES, MAX_ASSEMBLY_DEPTH, MAX_NEIGHBOURHOOD_DEPTH } from "../doma
  * written against these functions, never against SQL, so the queries that
  * replace PMem's Cypher live in one place.
  *
- * @typedef {Pick<import("../schema").GraphNode, "id" | "name" | "className" | "sourceTag" | "rflpLayer" | "sourceId" | "properties">} NodeRow
+ * @typedef {Pick<import("../schema").GraphNode, "id" | "name" | "externalKey" | "className" | "sourceTag" | "rflpLayer" | "sourceId" | "properties">} NodeRow
  *
  * @typedef {{
  *   edgeId: string;
@@ -26,6 +26,7 @@ import { EDGE_TYPES, MAX_ASSEMBLY_DEPTH, MAX_NEIGHBOURHOOD_DEPTH } from "../doma
 const nodeColumns = {
   id: graphNodes.id,
   name: graphNodes.name,
+  externalKey: graphNodes.externalKey,
   className: graphNodes.className,
   sourceTag: graphNodes.sourceTag,
   rflpLayer: graphNodes.rflpLayer,
@@ -37,9 +38,9 @@ const nodeColumns = {
 const escapeLike = (text) => text.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 /**
- * Nodes whose name, or id in their source file, contains the text. Exact
- * names first, then prefixes, then shorter names — the order a person
- * scanning results expects.
+ * Nodes whose name, or id in their source file, contains the text. An
+ * exact part number first, then exact names, then prefixes, then shorter
+ * names — the order a person scanning results expects.
  *
  * @param {string} text
  * @param {number} limit
@@ -55,6 +56,7 @@ export async function findNodes(text, limit, classNames) {
     .from(graphNodes)
     .where(classNames?.length ? and(match, inArray(graphNodes.className, classNames)) : match)
     .orderBy(
+      sql`(lower(${graphNodes.externalKey}) = ${q}) desc`,
       sql`(lower(${graphNodes.name}) = ${q}) desc`,
       sql`(lower(${graphNodes.name}) like ${`${escapeLike(q)}%`}) desc`,
       sql`length(${graphNodes.name})`,
@@ -132,6 +134,7 @@ export async function directLinks(ids, opts = {}) {
     edgeProperties: graphEdges.properties,
     id: other.id,
     name: other.name,
+    externalKey: other.externalKey,
     className: other.className,
     sourceTag: other.sourceTag,
     rflpLayer: other.rflpLayer,
@@ -169,6 +172,7 @@ export async function directLinks(ids, opts = {}) {
       node: {
         id: r.id,
         name: r.name,
+        externalKey: r.externalKey,
         className: r.className,
         sourceTag: r.sourceTag,
         rflpLayer: r.rflpLayer,

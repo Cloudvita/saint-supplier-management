@@ -103,12 +103,13 @@ id, so supplier links and POs that name them still work. Files are limited to
 | CAD part or assembly | `.stp`, `.step`, `.p21` | STEP AP242 / AP214 / AP203: products with part number and revision (Teamcenter `item_rev;seq-name` names understood), assembly structure with quantities, user-defined attributes, material, and PMI (counts and annotation texts such as `⌰ 0.004 A`). Geometry is ignored. |
 | PLM assembly structure | `.stpx` | AP242 BO Model XML: parts, revisions, assembly structure with quantities, geometry-file references. |
 | STEP package | `.zip` | An assembly `.stpx` plus its part `.stp` files, merged by part number into one import: structure from the assembly, attributes and PMI from each part. Up to 300 files and 64 MB unpacked. |
+| Teamcenter PLMXML | `.plmxml`, `.xml` | Items and revisions (latest kept, keyed by item id), occurrence or instance-graph structure with quantities, requirements, RFLP functions and logical components, change requests and notices, processes and operations with the parts they use, Item Master forms and UserData as properties, datasets. GeneralRelations become trace and change links (`Seg0Satisfy`, `Seg0Realize`, `Seg0Allocate`, `FND_TraceLink`, `CMHas*Item`). |
 
 A preview warns when parts in the file are already in the graph from another
 import, so the earlier import can be replaced instead of duplicated.
 
-PLMXML and XMI/SysML importers are being ported from PMem's Python code; until
-they land, the `PMem/` folder is kept as reference only and is not run. After pulling the product changes, run
+The XMI/SysML importer is being ported from PMem's Python code; until it lands,
+the `PMem/` folder is kept as reference only and is not run. After pulling the product changes, run
 `npm run db:migrate` locally (Vercel production builds migrate automatically,
 see below) and `npm run db:seed` once so existing roles pick up `product:read`
 and `product:write`.
