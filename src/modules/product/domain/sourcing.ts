@@ -16,11 +16,8 @@ const termsShape = {
 export const linkSupplierSchema = z.object({
   /** Graph node id, as returned by part search. */
   partId: z.string().trim().min(1),
-  /**
-   * The part's name. Used to find the node in PMem, which can look a node up
-   * by name but not by id alone, and confirmed against `partId` there.
-   */
-  partName: z.string().trim().min(1).max(300),
+  /** Accepted for older callers; the name stored is always the graph's own. */
+  partName: z.string().trim().max(300).optional(),
   supplierId: z.string().trim().min(1),
   ...termsShape,
 });

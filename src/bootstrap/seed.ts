@@ -7,14 +7,16 @@ import { suppliers } from "@/modules/suppliers/schema";
 import { buildDemoRows } from "@/modules/suppliers/domain/seed-data";
 import { createUser, syncRoleCatalogue, createTeam, listUsers, updateUser } from "@/modules/user_admin";
 import { setPassword } from "@/modules/auth";
+import { seedDemoProductGraph } from "@/modules/product";
 
 const log = createLogger("seed");
 
 /**
  * Bring a fresh environment up to a usable state.
  *
- * Idempotent throughout: the role catalogue upserts, and the supplier and user
- * seeds no-op when data already exists, so this is safe to run on every deploy.
+ * Idempotent throughout: the role catalogue upserts, and the supplier, user and
+ * product-graph seeds no-op when data already exists, so this is safe to run on
+ * every deploy.
  */
 export async function seed() {
   // 1. Roles are code-defined; mirror them into the database first because
@@ -65,7 +67,11 @@ export async function seed() {
     log.warn("seeded administrator — change this password immediately", { userName: "admin" });
   }
 
-  return { seededSuppliers, seededAdmin, roles: roles.length };
+  // 4. A demo product graph, only into an empty graph.
+  const seededProductGraph = await seedDemoProductGraph();
+  log.info(seededProductGraph ? "demo product graph seeded" : "product graph seed skipped");
+
+  return { seededSuppliers, seededAdmin, seededProductGraph, roles: roles.length };
 }
 
 // Allow `npm run db:seed` to execute this file directly.

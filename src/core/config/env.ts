@@ -42,14 +42,6 @@ const envSchema = z.object({
   /** Shared secret the agent service presents when calling module tool endpoints. */
   AGENT_TOOL_SECRET: z.string().optional(),
 
-  // --- product knowledge graph (PMem service) ---
-  /**
-   * Where the PMem FastAPI service listens. Port 8100, not PMem's own default
-   * of 8000, which the agent service already uses.
-   */
-  PMEM_SERVICE_URL: z.string().default("http://127.0.0.1:8100"),
-  PMEM_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
-
   // --- auth ---
   /** Server-side pepper mixed into password hashes. Required in production. */
   AUTH_PEPPER: z.string().default("saint-dev-pepper"),

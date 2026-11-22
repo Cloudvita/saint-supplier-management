@@ -10,8 +10,7 @@ import { listPartsForSupplier, type SupplierSummary } from "@/modules/product";
  * which parts have no other approved source and how much is on order for
  * them — the figures a buyer needs to decide whether to dual-source now.
  *
- * Composed from three modules' public APIs; it reads no tables itself and
- * does not call PMem, so it keeps working when the graph service is down.
+ * Composed from three modules' public APIs; it reads no tables itself.
  */
 
 const SEVERITY_RANK: Record<string, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
