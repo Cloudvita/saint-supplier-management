@@ -6,6 +6,7 @@ import { graphImports, type GraphImport, type GraphSource } from "../schema";
 import { IMPORTERS, importerFor } from "../domain/importers";
 import type { GraphDocument } from "../domain/graph-document";
 import { writeGraph } from "./graph-writer";
+import { existingKeys } from "./graph.repository";
 
 const log = createLogger("product.import");
 
@@ -113,6 +114,16 @@ export async function stageImport(file: { name: string; bytes: Uint8Array }, cre
   }
   if (parsed.document.nodes.length === 0) {
     throw AppError.validation(`No parts found in "${file.name}"`, { file: parsed.warnings.length ? parsed.warnings : ["No rows"] });
+  }
+
+  // Parts already in the graph from another file would be duplicated; say
+  // so, and name the import that a replace would update instead.
+  const overlaps = await existingKeys(parsed.document.nodes.map((n) => n.key));
+  for (const o of overlaps.slice(0, 3)) {
+    parsed.warnings.unshift(
+      `${o.keys.length} part(s) are already in the graph from "${o.sourceName}" (${o.keys.slice(0, 5).join(", ")}${o.keys.length > 5 ? " …" : ""}). ` +
+        `Committing adds a second copy; to update that import instead, commit with replaceSourceId ${o.sourceId}.`
+    );
   }
 
   await expireOldPreviews();
