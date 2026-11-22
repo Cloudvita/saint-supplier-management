@@ -63,11 +63,12 @@ export function toProductNode(node) {
 }
 
 /**
- * Pick the closest name to what was asked for. PMem used difflib's ratio;
- * this ranks the cases that matter in practice: exact (ignoring case), then
- * prefix, then the shortest name containing the query — i.e. the least extra.
+ * Pick the closest match to what was asked for. PMem used difflib's ratio;
+ * this ranks the cases that matter in practice: the part number exactly,
+ * then the name exactly (ignoring case), then a name prefix, then the
+ * shortest name containing the query — i.e. the least extra.
  *
- * @template {{ name: string }} T
+ * @template {{ name: string; externalKey?: string | null }} T
  * @param {string} query
  * @param {T[]} candidates
  * @returns {T | null}
@@ -78,7 +79,9 @@ export function bestNameMatch(query, candidates) {
   let best = null;
   for (const item of candidates) {
     const name = item.name.toLowerCase();
-    const rank = name === q ? 0 : name.startsWith(q) ? 1 + name.length / 1000 : name.includes(q) ? 2 + name.length / 1000 : 3;
+    const key = (item.externalKey ?? "").toLowerCase();
+    const rank =
+      key === q ? 0 : name === q ? 0.5 : name.startsWith(q) ? 1 + name.length / 1000 : name.includes(q) ? 2 + name.length / 1000 : 3;
     if (!best || rank < best.rank) best = { item, rank };
   }
   return best && best.rank < 3 ? best.item : null;
