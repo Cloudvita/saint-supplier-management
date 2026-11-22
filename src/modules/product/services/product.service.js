@@ -1,7 +1,8 @@
+// @ts-check
 import { AppError } from "@/core/errors";
-import { bestNameMatch, toProductNode, type ProductLink, type ProductNode } from "../domain/graph";
-import { CHANGE_CLASSES, EDGE_TYPES, PART_CLASSES, PROCESS_CLASSES, TRACE_EDGE_TYPES } from "../domain/graph-model";
-import { impactScore, similarityScore, type ChangeImpact, type SimilarParts } from "../domain/impact";
+import { bestNameMatch, toProductNode } from "../domain/graph.js";
+import { CHANGE_CLASSES, EDGE_TYPES, PART_CLASSES, PROCESS_CLASSES, TRACE_EDGE_TYPES } from "../domain/graph-model.js";
+import { impactScore, similarityScore } from "../domain/impact.js";
 import {
   assemblyAncestors,
   assemblySiblings,
@@ -11,40 +12,53 @@ import {
   getNode,
   nodesInSameSources,
   reachableCount,
-} from "./graph.repository";
+} from "./graph.repository.js";
 
 /**
  * Product knowledge graph queries, over SAINT's own graph tables.
  *
  * The graph is built by importing engineering files; what SAINT adds on top
  * — which supplier makes which part — lives in `sourcing.service.ts`.
+ *
+ * @typedef {import("../domain/graph.js").ProductNode} ProductNode
+ * @typedef {import("../domain/graph.js").ProductLink} ProductLink
+ * @typedef {import("../domain/impact.js").ChangeImpact} ChangeImpact
+ * @typedef {import("../domain/impact.js").SimilarParts} SimilarParts
+ * @typedef {import("./graph.repository.js").NodeRow} NodeRow
  */
 
 /** How many name matches an analysis considers before picking the best one. */
 const RESOLVE_CANDIDATES = 25;
 
-/** Find parts, assemblies and other graph nodes by name or source id. */
-export async function searchParts(input: {
-  q: string;
-  limit?: number;
-}): Promise<{ parts: ProductNode[]; total: number }> {
+/**
+ * Find parts, assemblies and other graph nodes by name or source id.
+ * @param {{ q: string; limit?: number }} input
+ * @returns {Promise<{ parts: ProductNode[]; total: number }>}
+ */
+export async function searchParts(input) {
   const q = input.q.trim();
   if (!q) throw AppError.badRequest("Search text is required");
   const parts = (await findNodes(q, input.limit ?? 10)).map(toProductNode);
   return { parts, total: parts.length };
 }
 
-/** A graph node by id, or null. */
-export async function getPart(partId: string): Promise<ProductNode | null> {
+/**
+ * A graph node by id, or null.
+ * @param {string} partId
+ * @returns {Promise<ProductNode | null>}
+ */
+export async function getPart(partId) {
   const node = await getNode(partId);
   return node ? toProductNode(node) : null;
 }
 
-/** What a part is directly connected to: assemblies, requirements, processes, documents. */
-export async function getPartLinks(
-  partId: string,
-  limit = 50
-): Promise<{ part: ProductNode; links: ProductLink[]; indirectCount: number }> {
+/**
+ * What a part is directly connected to: assemblies, requirements, processes, documents.
+ * @param {string} partId
+ * @param {number} [limit]
+ * @returns {Promise<{ part: ProductNode; links: ProductLink[]; indirectCount: number }>}
+ */
+export async function getPartLinks(partId, limit = 50) {
   const node = await getNode(partId);
   if (!node) throw AppError.notFound(`Part ${partId}`);
 
@@ -62,8 +76,13 @@ export async function getPartLinks(
  * The best name match; when several nodes match equally well (the same part
  * imported from two files), the one with more links — the copy that sits in
  * an assembly rather than a stand-alone part file.
+ *
+ * @template {{ id: string; name: string }} T
+ * @param {string} name
+ * @param {T[]} candidates
+ * @returns {Promise<T | null>}
  */
-async function bestConnectedMatch<T extends { id: string; name: string }>(name: string, candidates: T[]): Promise<T | null> {
+async function bestConnectedMatch(name, candidates) {
   const best = bestNameMatch(name, candidates);
   if (!best) return null;
   const ties = candidates.filter((c) => c.name.toLowerCase() === best.name.toLowerCase());
@@ -72,24 +91,35 @@ async function bestConnectedMatch<T extends { id: string; name: string }>(name: 
   return ties.reduce((a, b) => ((degree.get(b.id) ?? 0) > (degree.get(a.id) ?? 0) ? b : a));
 }
 
-/** The best-matching change request / notice by name. */
-async function resolveChange(name: string) {
+/**
+ * The best-matching change request / notice by name.
+ * @param {string} name
+ */
+async function resolveChange(name) {
   return bestConnectedMatch(name, await findNodes(name, RESOLVE_CANDIDATES, CHANGE_CLASSES));
 }
 
 /**
  * The best-matching part by name: parts and assemblies first, then any other
  * node that is not a change (a function, a document ...).
+ * @param {string} name
  */
-async function resolvePartByName(name: string) {
+async function resolvePartByName(name) {
   const part = await bestConnectedMatch(name, await findNodes(name, RESOLVE_CANDIDATES, PART_CLASSES));
   if (part) return part;
   const others = (await findNodes(name, RESOLVE_CANDIDATES)).filter((n) => !CHANGE_CLASSES.includes(n.className ?? ""));
   return bestConnectedMatch(name, others);
 }
 
-function uniqueBy<T>(items: T[], key: (t: T) => string): T[] {
-  const seen = new Set<string>();
+/**
+ * @template T
+ * @param {T[]} items
+ * @param {(t: T) => string} key
+ * @returns {T[]}
+ */
+function uniqueBy(items, key) {
+  /** @type {Set<string>} */
+  const seen = new Set();
   return items.filter((t) => (seen.has(key(t)) ? false : (seen.add(key(t)), true)));
 }
 
@@ -99,8 +129,12 @@ function uniqueBy<T>(items: T[], key: (t: T) => string): T[] {
  * as PMem's recommender: affected items via change links (or the part
  * itself), assemblies above them, requirements they satisfy, processes in the
  * same files, and their other trace links.
+ *
+ * @param {string} name
+ * @param {{ asChange?: boolean }} [opts]
+ * @returns {Promise<ChangeImpact>}
  */
-export async function analyseChangeImpact(name: string, opts: { asChange?: boolean } = {}): Promise<ChangeImpact> {
+export async function analyseChangeImpact(name, opts = {}) {
   const start = opts.asChange ? await resolveChange(name) : await resolvePartByName(name);
   if (!start) {
     return {
@@ -121,10 +155,11 @@ export async function analyseChangeImpact(name: string, opts: { asChange?: boole
   const changeLinks = opts.asChange
     ? (await directLinks([start.id], { types: [EDGE_TYPES.CHANGE_AFFECTS] })).filter((l) => l.direction === "out")
     : [];
+  /** @type {Array<{ node: NodeRow; relation: string }>} */
   const impacted = changeLinks.length
     ? uniqueBy(changeLinks, (l) => l.node.id).map((l) => ({
         node: l.node,
-        relation: (l.edgeProperties.role as string | undefined) ?? l.type,
+        relation: typeof l.edgeProperties.role === "string" ? l.edgeProperties.role : l.type,
       }))
     : [{ node: start, relation: "self" }];
   const impactedIds = impacted.map((i) => i.node.id);
@@ -149,11 +184,14 @@ export async function analyseChangeImpact(name: string, opts: { asChange?: boole
   const affectedRequirements = uniqueBy(
     requirementLinks.filter((l) => l.direction === "out"),
     (l) => l.node.name
-  ).map((l) => ({
-    name: l.node.name,
-    catalogueId: ((l.node.properties as Record<string, unknown>).catalogueId as string | undefined) ?? null,
-    linkedPart: nameOf.get(l.fromNodeId) ?? null,
-  }));
+  ).map((l) => {
+    const catalogueId = l.node.properties.catalogueId;
+    return {
+      name: l.node.name,
+      catalogueId: typeof catalogueId === "string" ? catalogueId : null,
+      linkedPart: nameOf.get(l.fromNodeId) ?? null,
+    };
+  });
   const affectedProcesses = uniqueBy(processes, (p) => p.name).map((p) => ({
     name: p.name,
     linkType: "same source file",
@@ -167,11 +205,12 @@ export async function analyseChangeImpact(name: string, opts: { asChange?: boole
     viaPart: nameOf.get(l.fromNodeId) ?? null,
   }));
 
+  const revision = start.properties.revision;
   return {
     changeEntity: {
       name: start.name,
       sourceTag: start.sourceTag,
-      revision: ((start.properties as Record<string, unknown>).revision as string | undefined) ?? null,
+      revision: typeof revision === "string" ? revision : null,
       id: start.id,
     },
     impactScore: impactScore({
@@ -195,8 +234,13 @@ export async function analyseChangeImpact(name: string, opts: { asChange?: boole
   };
 }
 
-/** Parts that resemble this one — candidates for substitution or consolidated sourcing. */
-export async function findSimilarParts(partName: string, limit = 5): Promise<SimilarParts> {
+/**
+ * Parts that resemble this one — candidates for substitution or consolidated sourcing.
+ * @param {string} partName
+ * @param {number} [limit]
+ * @returns {Promise<SimilarParts>}
+ */
+export async function findSimilarParts(partName, limit = 5) {
   const source = await resolvePartByName(partName);
   if (!source) return { sourcePart: null, similarParts: [], message: `Part '${partName}' not found` };
 
@@ -206,8 +250,8 @@ export async function findSimilarParts(partName: string, limit = 5): Promise<Sim
     directLinks([source.id], { types: TRACE_EDGE_TYPES }),
   ]);
 
-  type Candidate = (typeof sameFile)[number] & { sharedAssembly: boolean; traceLinked: boolean };
-  const candidates = new Map<string, Candidate>();
+  /** @type {Map<string, NodeRow & { sharedAssembly: boolean; traceLinked: boolean }>} */
+  const candidates = new Map();
   for (const n of [...sameFile, ...siblings]) {
     candidates.set(n.id, { ...n, sharedAssembly: true, traceLinked: candidates.get(n.id)?.traceLinked ?? false });
   }

@@ -36,7 +36,7 @@ saint-app/
 │   │   ├── contracts/        # lifecycle, clause audit, renewals, e-signature
 │   │   ├── spend/            # requisitions, POs, receipts, invoices, budgets
 │   │   ├── reports/          # cross-module dashboards, metrics, export engine
-│   │   ├── product/          # product knowledge graph (Postgres), supplier ↔ part links
+│   │   ├── product/          # product knowledge graph (Postgres; graph code in plain JS), supplier ↔ part links
 │   │   └── ai_agents/        # tool registry, mode routing, agent gateway
 │   │
 │   ├── bootstrap/            # composition root (seeding)

@@ -38,7 +38,9 @@ function walk(dir) {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) out.push(...walk(full));
-    else if (/\.(ts|tsx)$/.test(entry)) out.push(full);
+    // .js too: the product knowledge graph is written in JavaScript and must
+    // follow the same module rules as the TypeScript around it.
+    else if (/\.(ts|tsx|js|mjs)$/.test(entry)) out.push(full);
   }
   return out;
 }

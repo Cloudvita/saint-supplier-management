@@ -1,3 +1,5 @@
+// @ts-check
+
 /**
  * ISO 10303-21 ("STEP Part 21", .stp/.step) reader: the clear-text exchange
  * format. Turns the DATA section into entity instances with typed parameters.
@@ -7,30 +9,26 @@
  * kept parameters as raw strings; this one parses them, so strings are
  * decoded (including the \X2\…\X0\ Unicode encoding) and lists and
  * references are real values.
+ *
+ * @typedef {{ kind: "ref"; id: number }
+ *   | { kind: "string"; value: string }
+ *   | { kind: "number"; value: number }
+ *   | { kind: "enum"; value: string }
+ *   | { kind: "list"; items: P21Value[] }
+ *   | { kind: "typed"; type: string; value: P21Value }
+ *   | { kind: "null" }
+ *   | { kind: "derived" }} P21Value
+ *   `null` is STEP's `$`, `derived` its `*`.
+ *
+ * @typedef {{ id: number; types: string[]; params: P21Value[][] }} P21Entity
+ *   For a complex instance (#1=(A(...)B(...))), every partial type in order,
+ *   with its parameters; a simple instance has one of each.
+ *
+ * @typedef {{
+ *   header: { fileName: string | null; originatingSystem: string | null; schema: string | null };
+ *   entities: Map<number, P21Entity>;
+ * }} P21File
  */
-
-export type P21Value =
-  | { kind: "ref"; id: number }
-  | { kind: "string"; value: string }
-  | { kind: "number"; value: number }
-  | { kind: "enum"; value: string }
-  | { kind: "list"; items: P21Value[] }
-  | { kind: "typed"; type: string; value: P21Value }
-  | { kind: "null" } // $
-  | { kind: "derived" }; // *
-
-export type P21Entity = {
-  id: number;
-  /** For a complex instance (#1=(A(...)B(...))), every partial type in order. */
-  types: string[];
-  /** Parameters per type; for a simple instance, one list. */
-  params: P21Value[][];
-};
-
-export type P21File = {
-  header: { fileName: string | null; originatingSystem: string | null; schema: string | null };
-  entities: Map<number, P21Entity>;
-};
 
 /* ------------------------------ string codec ------------------------------ */
 
@@ -38,8 +36,10 @@ export type P21File = {
  * Decode a STEP string literal's contents (quotes already removed):
  * '' → ', \\ → \, \X2\hhhh…\X0\ (UTF-16), \X4\hhhhhhhh…\X0\ (UTF-32),
  * \X\hh (ISO 8859-1), \S\c (c + 128), \P?\ page switches (ignored).
+ *
+ * @param {string} raw
  */
-export function decodeStepString(raw: string): string {
+export function decodeStepString(raw) {
   let out = "";
   for (let i = 0; i < raw.length; i++) {
     const c = raw[i];
@@ -48,7 +48,8 @@ export function decodeStepString(raw: string): string {
       i++;
     } else if (c === "\\") {
       const rest = raw.slice(i);
-      let m: RegExpMatchArray | null;
+      /** @type {RegExpMatchArray | null} */
+      let m;
       if ((m = rest.match(/^\\X2\\((?:[0-9A-Fa-f]{4})*)\\X0\\/))) {
         for (let k = 0; k < m[1].length; k += 4) out += String.fromCharCode(parseInt(m[1].slice(k, k + 4), 16));
         i += m[0].length - 1;
@@ -79,8 +80,11 @@ export function decodeStepString(raw: string): string {
 /* ------------------------------- tokenizer -------------------------------- */
 
 class Cursor {
-  i = 0;
-  constructor(readonly s: string) {}
+  /** @param {string} s */
+  constructor(s) {
+    this.s = s;
+    this.i = 0;
+  }
   ws() {
     while (this.i < this.s.length) {
       const c = this.s[this.i];
@@ -95,11 +99,13 @@ class Cursor {
     this.ws();
     return this.s[this.i];
   }
-  expect(ch: string) {
+  /** @param {string} ch */
+  expect(ch) {
     if (this.peek() !== ch) throw new SyntaxError(`STEP: expected "${ch}" at offset ${this.i}`);
     this.i++;
   }
-  keyword(): string {
+  /** @returns {string} */
+  keyword() {
     this.ws();
     const m = /^[A-Za-z_][A-Za-z0-9_]*/.exec(this.s.slice(this.i, this.i + 200));
     if (!m) throw new SyntaxError(`STEP: expected a keyword at offset ${this.i}`);
@@ -108,7 +114,8 @@ class Cursor {
   }
 }
 
-function readString(c: Cursor): string {
+/** @param {Cursor} c */
+function readString(c) {
   c.expect("'");
   let raw = "";
   while (c.i < c.s.length) {
@@ -128,7 +135,11 @@ function readString(c: Cursor): string {
   throw new SyntaxError("STEP: unterminated string");
 }
 
-function readValue(c: Cursor): P21Value {
+/**
+ * @param {Cursor} c
+ * @returns {P21Value}
+ */
+function readValue(c) {
   const ch = c.peek();
   if (ch === "'") return { kind: "string", value: readString(c) };
   if (ch === "#") {
@@ -173,9 +184,14 @@ function readValue(c: Cursor): P21Value {
   return { kind: "typed", type, value };
 }
 
-function readList(c: Cursor): P21Value[] {
+/**
+ * @param {Cursor} c
+ * @returns {P21Value[]}
+ */
+function readList(c) {
   c.expect("(");
-  const items: P21Value[] = [];
+  /** @type {P21Value[]} */
+  const items = [];
   if (c.peek() === ")") {
     c.i++;
     return items;
@@ -189,9 +205,13 @@ function readList(c: Cursor): P21Value[] {
   }
 }
 
-/** Split a section into ";"-terminated records, respecting strings and comments. */
-function records(section: string): string[] {
-  const out: string[] = [];
+/**
+ * Split a section into ";"-terminated records, respecting strings and comments.
+ * @param {string} section
+ */
+function records(section) {
+  /** @type {string[]} */
+  const out = [];
   let start = 0;
   let inString = false;
   for (let i = 0; i < section.length; i++) {
@@ -215,7 +235,11 @@ function records(section: string): string[] {
   return out;
 }
 
-function section(text: string, name: "HEADER" | "DATA"): string {
+/**
+ * @param {string} text
+ * @param {"HEADER" | "DATA"} name
+ */
+function section(text, name) {
   const re = new RegExp(`(^|;)\\s*${name}\\s*;`, "i");
   const m = re.exec(text);
   if (!m) return "";
@@ -224,20 +248,29 @@ function section(text: string, name: "HEADER" | "DATA"): string {
   return end ? text.slice(from, from + end.index + (end[1] ? 1 : 0)) : text.slice(from);
 }
 
-function firstString(v: P21Value | undefined): string | null {
+/**
+ * @param {P21Value | undefined} v
+ * @returns {string | null}
+ */
+function firstString(v) {
   if (!v) return null;
   if (v.kind === "string") return v.value;
   if (v.kind === "list") return firstString(v.items[0]);
   return null;
 }
 
-/** Parse a Part 21 file. Throws SyntaxError on a file that is not STEP. */
-export function parsePart21(text: string): P21File {
+/**
+ * Parse a Part 21 file. Throws SyntaxError on a file that is not STEP.
+ * @param {string} text
+ * @returns {P21File}
+ */
+export function parsePart21(text) {
   if (!/^\s*ISO-10303-21\s*;/i.test(text.replace(/^﻿/, ""))) {
     throw new SyntaxError("Not a STEP Part 21 file (it must start with ISO-10303-21;)");
   }
 
-  const header: P21File["header"] = { fileName: null, originatingSystem: null, schema: null };
+  /** @type {P21File["header"]} */
+  const header = { fileName: null, originatingSystem: null, schema: null };
   for (const rec of records(section(text, "HEADER"))) {
     const c = new Cursor(rec);
     const kw = c.keyword();
@@ -250,7 +283,8 @@ export function parsePart21(text: string): P21File {
     }
   }
 
-  const entities = new Map<number, P21Entity>();
+  /** @type {Map<number, P21Entity>} */
+  const entities = new Map();
   for (const rec of records(section(text, "DATA"))) {
     const m = /^#(\d+)\s*=\s*/.exec(rec);
     if (!m) continue;
@@ -259,8 +293,10 @@ export function parsePart21(text: string): P21File {
     if (c.peek() === "(") {
       // Complex instance: (TYPE_A(...) TYPE_B(...) ...)
       c.i++;
-      const types: string[] = [];
-      const params: P21Value[][] = [];
+      /** @type {string[]} */
+      const types = [];
+      /** @type {P21Value[][]} */
+      const params = [];
       while (c.peek() !== ")" && c.i < c.s.length) {
         types.push(c.keyword());
         params.push(readList(c));
@@ -276,30 +312,50 @@ export function parsePart21(text: string): P21File {
 
 /* --------------------------------- access --------------------------------- */
 
-export const str = (v: P21Value | undefined): string | null => (v?.kind === "string" ? v.value : null);
-export const ref = (v: P21Value | undefined): number | null => (v?.kind === "ref" ? v.id : null);
-export const refs = (v: P21Value | undefined): number[] =>
-  v?.kind === "list" ? v.items.map(ref).filter((x): x is number => x !== null) : [];
+/** @param {P21Value | undefined} v */
+export const str = (v) => (v?.kind === "string" ? v.value : null);
+/** @param {P21Value | undefined} v */
+export const ref = (v) => (v?.kind === "ref" ? v.id : null);
+/**
+ * @param {P21Value | undefined} v
+ * @returns {number[]}
+ */
+export const refs = (v) =>
+  v?.kind === "list" ? /** @type {number[]} */ (v.items.map(ref).filter((x) => x !== null)) : [];
 
-/** A measure's number, unwrapping typed parameters such as LENGTH_MEASURE(1.5). */
-export function num(v: P21Value | undefined): number | null {
+/**
+ * A measure's number, unwrapping typed parameters such as LENGTH_MEASURE(1.5).
+ * @param {P21Value | undefined} v
+ * @returns {number | null}
+ */
+export function num(v) {
   if (!v) return null;
   if (v.kind === "number") return v.value;
   if (v.kind === "typed") return num(v.value);
   return null;
 }
 
-/** Simple instances of a type. */
-export function ofType(file: P21File, type: string): P21Entity[] {
-  const out: P21Entity[] = [];
+/**
+ * Simple instances of a type.
+ * @param {P21File} file
+ * @param {string} type
+ */
+export function ofType(file, type) {
+  /** @type {P21Entity[]} */
+  const out = [];
   for (const e of file.entities.values()) if (e.types.length === 1 && e.types[0] === type) out.push(e);
   return out;
 }
 
-/** Instances that are, or include as a partial type, any of the given types. */
-export function including(file: P21File, types: string[]): P21Entity[] {
+/**
+ * Instances that are, or include as a partial type, any of the given types.
+ * @param {P21File} file
+ * @param {string[]} types
+ */
+export function including(file, types) {
   const set = new Set(types);
-  const out: P21Entity[] = [];
+  /** @type {P21Entity[]} */
+  const out = [];
   for (const e of file.entities.values()) if (e.types.some((t) => set.has(t))) out.push(e);
   return out;
 }

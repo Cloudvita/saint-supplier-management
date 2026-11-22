@@ -1,8 +1,7 @@
-import { CLASSES, EDGE_TYPES } from "../../graph-model";
-import type { GraphDocumentEdge, GraphDocumentNode } from "../../graph-document";
-import type { ParsedImport } from "../tabular";
-import { attr, child, children, parseXml, text, walk, type XmlNode } from "../xml";
-import { splitTeamcenterName } from "./ap242";
+// @ts-check
+import { CLASSES, EDGE_TYPES } from "../../graph-model.js";
+import { attr, child, children, parseXml, text, walk } from "../xml.js";
+import { splitTeamcenterName } from "./ap242.js";
 
 /**
  * AP242 Business Object Model XML (ISO 10303-3001, .stpx): how PLM systems
@@ -16,22 +15,42 @@ import { splitTeamcenterName } from "./ap242";
  * A ViewOccurrenceRelationship sits in the parent's view and points at an
  * Occurrence that sits in the child's view; counting those per pair gives
  * the quantity.
+ *
+ * @typedef {import("../../graph-document.js").ParsedImport} ParsedImport
+ * @typedef {import("../../graph-document.js").GraphDocumentNode} GraphDocumentNode
+ * @typedef {import("../../graph-document.js").GraphDocumentEdge} GraphDocumentEdge
+ * @typedef {import("../xml.js").XmlNode} XmlNode
  */
 
-function partNumberAndName(part: XmlNode): { key: string; name: string; revision: string | null } | null {
+/**
+ * @param {XmlNode} part
+ * @returns {{ key: string; name: string; revision: string | null } | null}
+ */
+function partNumberAndName(part) {
   const id = attr(child(part, "Id"), "id") ?? attr(child(child(part, "Id"), "Identifier"), "id");
   const name = text(child(child(part, "Name"), "CharacterString")) ?? id;
   if (!id && !name) return null;
   const split = splitTeamcenterName(id ?? "") ?? splitTeamcenterName(name ?? "");
-  return { key: split?.partNumber ?? (id as string), name: split?.name ?? (name as string), revision: split?.revision ?? null };
+  return {
+    key: split?.partNumber ?? /** @type {string} */ (id ?? name),
+    name: split?.name ?? /** @type {string} */ (name ?? id),
+    revision: split?.revision ?? null,
+  };
 }
 
-export function boModelXmlToGraph(xmlText: string, docName: string): ParsedImport {
+/**
+ * @param {string} xmlText
+ * @param {string} docName
+ * @returns {ParsedImport}
+ */
+export function boModelXmlToGraph(xmlText, docName) {
   const root = parseXml(xmlText);
-  const warnings: string[] = [];
+  /** @type {string[]} */
+  const warnings = [];
 
   // Files, for geometry-file properties.
-  const fileNames = new Map<string, string>();
+  /** @type {Map<string, string>} */
+  const fileNames = new Map();
   walk(root, (name, el) => {
     if (name !== "File") return;
     const uid = attr(el, "uid");
@@ -39,10 +58,12 @@ export function boModelXmlToGraph(xmlText: string, docName: string): ParsedImpor
     if (uid && fileId) fileNames.set(uid, fileId);
   });
 
-  const nodes = new Map<string, GraphDocumentNode>();
-  const viewOwner = new Map<string, string>(); // PartView uid → part key
-  const occurrenceOwner = new Map<string, string>(); // Occurrence uid → part key
-  const uses: Array<{ parentKey: string; occurrence: string }> = [];
+  /** @type {Map<string, GraphDocumentNode>} */
+  const nodes = new Map();
+  /** @type {Map<string, string>} Occurrence uid → part key */
+  const occurrenceOwner = new Map();
+  /** @type {Array<{ parentKey: string; occurrence: string }>} */
+  const uses = [];
 
   walk(root, (name, part) => {
     if (name !== "Part") return;
@@ -59,13 +80,14 @@ export function boModelXmlToGraph(xmlText: string, docName: string): ParsedImpor
     const partType = text(child(child(part, "PartTypes"), "ClassString"));
     const versions = children(child(part, "Versions"), "PartVersion");
     const revision = ident.revision ?? (versions.map((v) => attr(child(v, "Id"), "id")).find((r) => r) || null);
-    const properties: Record<string, unknown> = { stepPartId: attr(child(part, "Id"), "id") ?? undefined };
+    /** @type {Record<string, unknown>} */
+    const properties = {};
+    const stepPartId = attr(child(part, "Id"), "id");
+    if (stepPartId) properties.stepPartId = stepPartId;
     if (revision) properties.revision = revision;
 
     for (const version of versions) {
       for (const view of children(child(version, "Views"), "PartView")) {
-        const viewUid = attr(view, "uid");
-        if (viewUid) viewOwner.set(viewUid, key);
         for (const occ of children(view, "Occurrence")) {
           const uid = attr(occ, "uid");
           if (uid) occurrenceOwner.set(uid, key);
@@ -76,7 +98,7 @@ export function boModelXmlToGraph(xmlText: string, docName: string): ParsedImpor
         }
         const files = children(view, "DocumentAssignment")
           .map((d) => fileNames.get(attr(child(d, "AssignedDocument"), "uidRef") ?? ""))
-          .filter((f): f is string => Boolean(f));
+          .filter((f) => Boolean(f));
         if (files.length) properties.geometryFile = files.join("; ");
       }
     }
@@ -87,11 +109,12 @@ export function boModelXmlToGraph(xmlText: string, docName: string): ParsedImpor
       className: /assembly/i.test(partType ?? "") ? CLASSES.ASSEMBLY : CLASSES.PART,
       sourceTag: "Part",
       rflpLayer: "P",
-      properties: Object.fromEntries(Object.entries(properties).filter(([, v]) => v !== undefined)),
+      properties,
     });
   });
 
-  const quantities = new Map<string, number>();
+  /** @type {Map<string, number>} */
+  const quantities = new Map();
   for (const u of uses) {
     const childKey = occurrenceOwner.get(u.occurrence);
     if (!childKey) {
@@ -102,11 +125,12 @@ export function boModelXmlToGraph(xmlText: string, docName: string): ParsedImpor
     const k = `${u.parentKey}|${childKey}`;
     quantities.set(k, (quantities.get(k) ?? 0) + 1);
   }
-  const edges: GraphDocumentEdge[] = [...quantities].map(([k, quantity]) => {
+  /** @type {GraphDocumentEdge[]} */
+  const edges = [...quantities].map(([k, quantity]) => {
     const [from, to] = k.split("|");
     return { from, to, type: EDGE_TYPES.HAS_CHILD, properties: { quantity } };
   });
-  for (const e of edges) nodes.get(e.from)!.className = CLASSES.ASSEMBLY;
+  for (const e of edges) /** @type {GraphDocumentNode} */ (nodes.get(e.from)).className = CLASSES.ASSEMBLY;
 
   if (nodes.size === 0) warnings.push("No Part elements found; is this an AP242 BO Model XML file?");
   return { document: { format: "STEP", name: docName, nodes: [...nodes.values()], edges }, warnings };

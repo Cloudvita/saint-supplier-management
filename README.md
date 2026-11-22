@@ -80,7 +80,14 @@ extraction returns a clear error and alerts are logged instead of emailed.
 The `/product` module keeps the product knowledge graph (parts, assemblies,
 requirements, processes, changes and their links) in SAINT's own Postgres:
 `graph_sources`, `graph_nodes` and `graph_edges`. No Neo4j and no separate
-service. `npm run db:seed` loads a small demo graph (a 5 HP induction motor)
+service.
+
+For the pilot, the knowledge-graph code is **plain JavaScript** (`.js` files with
+JSDoc types and `// @ts-check`, so `npm run verify` still type-checks it) and uses
+**no npm packages of its own**: zip, `.xlsx` and XML are read with Node's built-in
+`zlib` and small readers in `domain/importers/`. The module's SAINT-facing
+surface stays TypeScript: `index.ts`, `schema.ts`, `agent-tools.ts`, the
+supplier ↔ part linking, and the API routes. `npm run db:seed` loads a small demo graph (a 5 HP induction motor)
 into an empty graph.
 
 Engineering files are imported in two steps, as in PMem: **upload** (the file
