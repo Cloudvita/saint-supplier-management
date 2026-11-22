@@ -20,6 +20,8 @@ export {
   runAgent,
   resolveMode,
   agentServiceHealth,
+  extractOntologyTriples,
+  answerFromGraph,
   type AgentRunRequest,
 } from "./services/agent-gateway";
 

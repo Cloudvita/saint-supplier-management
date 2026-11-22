@@ -127,3 +127,48 @@ export async function agentServiceHealth() {
     return { reachable: false, status: 0 };
   }
 }
+
+/**
+ * POST a JSON body to one of the agent service's stateless LLM endpoints.
+ * Caller-supplied content only; the service keeps nothing.
+ */
+async function callAgentService<T>(path: string, body: unknown, ctx: AuthContext): Promise<T> {
+  const url = `${getEnv().AGENT_SERVICE_URL}${path}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: agentHeaders(ctx),
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(120_000),
+  }).catch((e) => {
+    throw AppError.upstream(
+      `Agent service unreachable at ${url}. Start it with: cd backend && uvicorn saint_agents.main:app --port 8000`,
+      { cause: e instanceof Error ? e.message : String(e) }
+    );
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw AppError.upstream(`Agent service returned ${res.status}${detail ? `: ${detail.slice(0, 300)}` : ""}`);
+  }
+  return (await res.json()) as T;
+}
+
+/** Candidate knowledge-graph triples from document text, in the given ontology's terms (LangChain structured output). */
+export async function extractOntologyTriples(text: string, ontology: unknown, ctx: AuthContext) {
+  const out = await callAgentService<{ triples: unknown[] }>("/ontology-kg/extract", { text, ontology }, ctx);
+  return Array.isArray(out.triples) ? out.triples : [];
+}
+
+/** A Graph-RAG answer grounded in the graph context and risk paths SAINT supplies. */
+export async function answerFromGraph(
+  question: string,
+  graphContext: string,
+  riskPaths: unknown[],
+  ctx: AuthContext
+) {
+  const out = await callAgentService<{ answer: string }>(
+    "/ontology-kg/answer",
+    { question, graph_context: graphContext, risk_paths: riskPaths },
+    ctx
+  );
+  return out.answer;
+}

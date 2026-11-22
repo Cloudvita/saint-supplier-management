@@ -10,7 +10,8 @@ import json
 import logging
 from typing import Any, Literal
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import BaseModel, Field
@@ -20,6 +21,7 @@ from .core.config import settings
 from .core.errors import AgentError, ToolRegistryError
 from .core.http import ModuleApiClient
 from .graphs.agent_graph import build_agent_graph
+from .graphs.ontology_kg import answer_question, extract_triples
 from .graphs.risk_audit import STEP_DESCRIPTIONS, build_risk_audit_graph
 from .prompts.modes import MODE_PROMPTS, build_system_prompt
 from .providers.llm import get_llm
@@ -188,6 +190,47 @@ async def stream_agent(request: AgentRequest, http_request: Request):
                 await client.aclose()
 
     return EventSourceResponse(event_generator())
+
+
+def _require_secret(request: Request) -> None:
+    """When AGENT_TOOL_SECRET is set, only SAINT (which presents it) may call."""
+    if settings.tool_secret and request.headers.get("x-agent-secret") != settings.tool_secret:
+        raise HTTPException(status_code=401, detail="Missing or wrong X-Agent-Secret")
+
+
+class ExtractRequest(BaseModel):
+    text: str = Field(min_length=1)
+    ontology: dict[str, Any]
+
+
+class AnswerRequest(BaseModel):
+    question: str = Field(min_length=1)
+    graph_context: str = ""
+    risk_paths: list[dict[str, Any]] = Field(default_factory=list)
+
+
+@app.post("/ontology-kg/extract")
+async def ontology_extract(body: ExtractRequest, request: Request) -> dict[str, Any]:
+    """Document text -> candidate triples. SAINT validates and stores them."""
+    _require_secret(request)
+    try:
+        triples = await run_in_threadpool(extract_triples, get_llm(), body.text, body.ontology)
+    except AgentError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"triples": triples}
+
+
+@app.post("/ontology-kg/answer")
+async def ontology_answer(body: AnswerRequest, request: Request) -> dict[str, Any]:
+    """Question + graph context from SAINT -> a grounded answer."""
+    _require_secret(request)
+    try:
+        answer = await run_in_threadpool(
+            answer_question, get_llm(), body.question, body.graph_context, body.risk_paths
+        )
+    except AgentError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"answer": answer}
 
 
 @app.get("/api/stream-audit")

@@ -16,7 +16,7 @@ enforced boundaries, plus a Python LangGraph service that runs the AI agents.
 | `/contracts` | Lifecycle, metadata extraction, clause audit, renewals, e-signature |
 | `/spend` | Requisitions, POs, goods receipts, invoices, budgets, 3-way match |
 | `/reports` | Cross-module dashboards, metric pipeline, export engine (owns no tables) |
-| `/product` | Product knowledge graph in Postgres — part search, where-used, change impact, similar parts; supplier ↔ part links and sole-source exposure |
+| `/product` | Product knowledge graph in Postgres — part search, where-used, change impact, similar parts; supplier ↔ part links and sole-source exposure; the procurement ontology and supply-network graph (sub-tier vendors, locations, indirect risk) |
 | `/ai-agents` | Tool registry, mode routing, gateway to the LangGraph service |
 
 Each module exposes exactly one public entry point (`index.ts`). Reaching past a barrel, or
@@ -36,7 +36,8 @@ importing another module's tables, fails `npm run verify`.
 | Contract clause compliance | Deterministic audit; a contract missing GDPR / liability / termination-for-convenience cannot be sent for signature |
 | Purchase controls | Budget headroom + delegation of authority + sole-source justification + approved source for a named part, enforced in `spend/domain/policy.ts` |
 | Invoice three-way match | PO vs goods receipt vs invoice, with relative and absolute tolerance |
-| Conversational AI | 25 tools across 6 modules, exposed to LangChain agents in four operational modes |
+| Supply-network risk | Ontology-checked knowledge graph of suppliers, contracts, sub-tier vendors, locations and risk events; traces risks that reach a supplier through what it depends on, with the path (`/api/ontology-kg`) |
+| Conversational AI | 36 tools across 7 modules, exposed to LangChain agents in four operational modes |
 
 ## Architecture
 
@@ -108,6 +109,38 @@ id, so supplier links and POs that name them still work. Files are limited to
 A preview warns when parts in the file are already in the graph from another
 import, so the earlier import can be replaced instead of duplicated.
 
+### Procurement ontology and supply-network graph
+
+The same graph also holds the supply network, typed by the S.A.I.N.T. ontology
+(`src/modules/product/domain/procurement-ontology.js`): **Supplier**,
+**SubTierVendor**, **Contract**, **Category**, **Location**, **RiskEvent**, and
+eight allowed relationships (`DEPENDS_ON`, `GOVERNED_BY`, `COVERS_CATEGORY`,
+`OPERATES_IN`, `IMPACTS`).
+
+- **SAINT records are projected, not copied.** Suppliers, contracts, their
+  categories and countries, and open risk alerts are synced into the graph
+  (source `SAINT`) from the supplier and contract masters at most once a minute,
+  or on `POST /api/ontology-kg/sync`. Tax ids never enter the graph.
+- **Documents add the rest** (source `NETWORK`): sub-tier vendors, locations,
+  risk events and their links. Every triple is checked against the ontology in
+  SAINT, whatever produced it; a supplier or contract a document names must
+  already exist in SAINT (exact name, a unique prefix of it, supplier code or
+  contract number).
+- **LangChain** runs in the agent service and does only what needs a model:
+  `/ontology-kg/extract` turns document text into candidate triples with
+  structured output, and `/ontology-kg/answer` phrases a Graph-RAG answer from
+  the context SAINT assembles. Both use `LLM_PROVIDER` (Ollama or OpenAI) and
+  check `X-Agent-Secret` when `AGENT_TOOL_SECRET` is set. The agent service is
+  needed for `ingest` with `text` and for `query`; everything else works without it.
+- **Risk propagation is directional:** an event reaches a supplier when it
+  `IMPACTS` the supplier, a sub-tier vendor it `DEPENDS_ON`, or a location it
+  (or such a vendor) `OPERATES_IN`. Sharing a category or a contract with an
+  affected supplier does not count.
+
+`npm run db:seed` loads the demo network onto the demo suppliers: Bluepeak
+Software and Orchard Data Centers both depend on CoreVault Sub-Tier Hosting in
+APAC-ODC-Zone-2, which the SEC-2026-884 sub-processor breach impacts.
+
 The XMI/SysML importer is being ported from PMem's Python code; until it lands,
 the `PMem/` folder is kept as reference only and is not run. After pulling the product changes, run
 `npm run db:migrate` locally (Vercel production builds migrate automatically,
@@ -151,6 +184,11 @@ and `product:write`.
 | `GET` `POST` | `/api/product/parts/[id]/sources` | Suppliers that can make a part / link one `{partName, supplierId, status?, unitPrice?, leadTimeDays?}` |
 | `PATCH` `DELETE` | `/api/product/sources/[id]` | Change a link's status or terms / remove it |
 | `GET` | `/api/product/suppliers/[id]/parts` | Parts a supplier makes, flagging those where it is the only approved source |
+| `GET` | `/api/ontology-kg/schema` | The procurement ontology and supply-network graph size |
+| `POST` | `/api/ontology-kg/ingest` | `{documentName, text}` (LLM extraction) or `{documentName, triples}` → ontology-checked triples added, with rejections and reasons |
+| `POST` | `/api/ontology-kg/query` | `{question, supplier?}` → Graph-RAG answer, with the graph context and risk paths it used |
+| `GET` | `/api/ontology-kg/risk-trace/[supplier]?maxHops=3` | Risk events reaching a supplier (id, code or name) directly or indirectly, with propagation paths and sole-source parts |
+| `POST` | `/api/ontology-kg/sync` | Re-project SAINT suppliers, contracts and open alerts into the graph now |
 | `GET` | `/api/health` | App Runner health check |
 
 ## Data model
