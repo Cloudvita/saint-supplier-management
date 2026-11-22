@@ -10,7 +10,7 @@ import {
   type PartSourceStatus,
   type UpdatePartSourceInput,
 } from "../domain/sourcing";
-import { searchParts } from "./product.service";
+import { getPart } from "./product.service";
 
 const log = createLogger("product.sourcing");
 
@@ -18,9 +18,9 @@ const log = createLogger("product.sourcing");
  * Supplier ↔ part links: the module's first table, and the join between the
  * product graph and procurement.
  *
- * The part side lives in PMem and the supplier side in `/suppliers`, so this
- * service verifies both before writing and reads suppliers through their
- * module's barrel, never their table.
+ * The part side is this module's graph; the supplier side lives in
+ * `/suppliers`, read through its barrel, never its table. Both are verified
+ * before a link is written.
  */
 
 export type SupplierSummary = {
@@ -84,17 +84,10 @@ async function supplierSummary(supplierId: string): Promise<SupplierSummary | nu
   }
 }
 
-/**
- * Confirm a node exists in the product graph and return its canonical name.
- * PMem has no lookup by id, so search by the name the caller gave and match
- * the id among the results.
- */
-async function resolvePart(partId: string, partName: string): Promise<{ id: string; name: string }> {
-  const { parts } = await searchParts({ q: partName, limit: 100 });
-  const part = parts.find((p) => p.id === partId);
-  if (!part) {
-    throw AppError.notFound(`Part "${partName}" (${partId}) in the product graph`);
-  }
+/** Confirm a node exists in the product graph and return its canonical name. */
+async function resolvePart(partId: string): Promise<{ id: string; name: string }> {
+  const part = await getPart(partId);
+  if (!part) throw AppError.notFound(`Part ${partId} in the product graph`);
   return { id: part.id, name: part.name };
 }
 
@@ -102,22 +95,18 @@ async function resolvePart(partId: string, partName: string): Promise<{ id: stri
  * Confirm a part id for another module (a requisition or PO naming a part)
  * and return its name.
  *
- * A part SAINT has already linked to a supplier is taken from `part_sources`,
- * so buying a known part keeps working while PMem is down. Only a part seen
- * for the first time is looked up in PMem, which needs its name.
+ * A part already linked to a supplier is taken from `part_sources`, so a buy
+ * for it still works after its source file is re-imported and the node is
+ * replaced. Anything else must exist in the graph. `partName` is accepted for
+ * callers written against the old API and no longer needed.
  */
-export async function confirmPart(partId: string, partName?: string | null): Promise<{ id: string; name: string }> {
+export async function confirmPart(partId: string, _partName?: string | null): Promise<{ id: string; name: string }> {
   const known = await db.query.partSources.findFirst({
     where: eq(partSources.partId, partId),
     columns: { partId: true, partName: true },
   });
   if (known) return { id: known.partId, name: known.partName };
-  if (!partName?.trim()) {
-    throw AppError.validation("partName is required for a part no supplier is linked to yet", {
-      partName: ["Required"],
-    });
-  }
-  return resolvePart(partId, partName.trim());
+  return resolvePart(partId);
 }
 
 /** The supplier's status as a source of the part, or null when it has no link to it. */
@@ -147,7 +136,7 @@ export async function linkSupplierToPart(
     throw AppError.conflict(`${supplier.legalName} is already linked to this part`, { partSourceId: existing.id });
   }
 
-  const part = await resolvePart(input.partId, input.partName);
+  const part = await resolvePart(input.partId);
   const [row] = await db
     .insert(partSources)
     .values({

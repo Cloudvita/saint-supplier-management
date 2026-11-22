@@ -1,8 +1,7 @@
 # SAINT — Source-to-Procure Platform
 
 A **modular monolith**: one Next.js application partitioned into eight domain modules with
-enforced boundaries, plus a Python LangGraph service that runs the AI agents and the PMem
-service that serves the product knowledge graph.
+enforced boundaries, plus a Python LangGraph service that runs the AI agents.
 
 > **Architecture:** see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the module map, the
 > boundary rules, and how the LangChain integration works.
@@ -17,7 +16,7 @@ service that serves the product knowledge graph.
 | `/contracts` | Lifecycle, metadata extraction, clause audit, renewals, e-signature |
 | `/spend` | Requisitions, POs, goods receipts, invoices, budgets, 3-way match |
 | `/reports` | Cross-module dashboards, metric pipeline, export engine (owns no tables) |
-| `/product` | Product knowledge graph — part search, where-used, change impact — read from PMem; supplier ↔ part links and sole-source exposure |
+| `/product` | Product knowledge graph in Postgres — part search, where-used, change impact, similar parts; supplier ↔ part links and sole-source exposure |
 | `/ai-agents` | Tool registry, mode routing, gateway to the LangGraph service |
 
 Each module exposes exactly one public entry point (`index.ts`). Reaching past a barrel, or
@@ -76,26 +75,20 @@ npm run dev                   # http://localhost:3000
 Textract and SES calls need AWS credentials. Without them the app still runs — W-9
 extraction returns a clear error and alerts are logged instead of emailed.
 
-### Product knowledge graph (optional)
+### Product knowledge graph
 
-The `/product` module reads parts and assemblies from PMem, a separate Python service
-in `PMem/backend` backed by Neo4j. SAINT runs without it; product routes and agent tools
-then answer `502` with a hint to start it.
+The `/product` module keeps the product knowledge graph (parts, assemblies,
+requirements, processes, changes and their links) in SAINT's own Postgres:
+`graph_sources`, `graph_nodes` and `graph_edges`. No Neo4j and no separate
+service. `npm run db:seed` loads a small demo graph (a 5 HP induction motor)
+into an empty graph.
 
-```bash
-cd PMem/backend
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-# create PMem/backend/.env with NEO4J_URI, NEO4J_USER, NEO4J_PASS, NEO4J_DATABASE
-cd ../..
-npm run pmem:dev              # http://127.0.0.1:8100 (8000 is the agent service)
-```
-
-Load engineering files (STEP, XSD, XMI, PLMXML) through PMem's own UI in `PMem/frontend`.
-PMem has no authentication: keep it on a network only SAINT can reach. After pulling
-the product changes, run `npm run db:migrate` locally (Vercel production builds migrate automatically, see
-below) and `npm run db:seed` once so
-existing roles pick up `product:read` and `product:write`.
+Native importers for STEP/AP242, CSV/Excel, PLMXML and XMI/SysML are being
+ported from PMem's Python code; until they land, the `PMem/` folder is kept as
+reference only and is not run. After pulling the product changes, run
+`npm run db:migrate` locally (Vercel production builds migrate automatically,
+see below) and `npm run db:seed` once so existing roles pick up `product:read`
+and `product:write`.
 
 ## Scripts
 
@@ -124,7 +117,7 @@ existing roles pick up `product:read` and `product:write`.
 | `GET` `PATCH` | `/api/alerts` | List / update risk alerts |
 | `GET` | `/api/product/parts?q=&limit=` | Search parts and assemblies in the product graph |
 | `GET` | `/api/product/parts/[id]/links` | What a part is directly connected to (where-used) |
-| `POST` | `/api/product/change-impact` | `{partName}` → parts, assemblies, requirements a change touches |
+| `POST` | `/api/product/change-impact` | `{partName}` or `{changeName}` → parts, assemblies, requirements, processes and trace links a change touches |
 | `GET` | `/api/reports/supply-risk?supplierId=` | Sole-source parts and open POs at stake per supplier with an open risk alert, worst first |
 | `GET` `POST` | `/api/product/parts/[id]/sources` | Suppliers that can make a part / link one `{partName, supplierId, status?, unitPrice?, leadTimeDays?}` |
 | `PATCH` `DELETE` | `/api/product/sources/[id]` | Change a link's status or terms / remove it |
@@ -134,8 +127,10 @@ existing roles pick up `product:read` and `product:write`.
 ## Data model
 
 `suppliers` → `w9_documents`, `market_news_items`, `risk_alerts` (all cascade on delete).
-`part_sources` links a PMem graph part (`part_id`) to a supplier (`supplier_id`); neither is a
-foreign key, so both are checked when a link is made. `requisitions` and `purchase_orders`
+`graph_sources` → `graph_nodes` → `graph_edges` hold the product graph (deleting a source removes
+its nodes and edges). `part_sources` links a graph part (`part_id`) to a supplier (`supplier_id`);
+neither is a foreign key — a supplier link must survive re-importing a file — so both are checked
+when a link is made. `requisitions` and `purchase_orders`
 carry an optional `part_id` / `part_name` for the part being bought; a PO raised from a
 requisition inherits its part.
 Schema lives in `src/db/schema.ts`; migrations in `drizzle/`.

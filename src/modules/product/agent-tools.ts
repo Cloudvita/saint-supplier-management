@@ -25,6 +25,7 @@ const productNode = z.object({
   id: z.string(),
   name: z.string(),
   labels: z.array(z.string()),
+  className: z.string().nullable(),
   sourceTag: z.string().nullable(),
   properties: z.record(z.union([z.string(), z.number(), z.boolean()])),
 });
@@ -73,11 +74,16 @@ export const productChangeImpact = defineAgentTool({
   name: "product_change_impact",
   module: "product",
   description:
-    "Engineering change impact for a part, by part name: the parts, assemblies, requirements and " +
-    "manufacturing processes a design change would touch, with a 0–100 impact score. Use before " +
-    "advising on re-sourcing or re-quoting a part that is changing.",
+    "Engineering change impact, from a part name or a change request / notice name: the parts, " +
+    "assemblies, requirements, manufacturing processes and trace links a design change would touch, " +
+    "with a 0–100 impact score. Use before advising on re-sourcing or re-quoting a part that is changing.",
   permission: "product:read",
-  input: z.object({ partName: z.string().min(1).max(200) }),
+  input: z
+    .object({
+      partName: z.string().min(1).max(200).optional().describe("Analyse a change to this part"),
+      changeName: z.string().min(1).max(200).optional().describe("Or: analyse this change request / notice"),
+    })
+    .refine((v) => Boolean(v.partName) !== Boolean(v.changeName), { message: "Give exactly one of partName or changeName" }),
   output: z.object({
     changeEntity: z
       .object({ name: z.string(), sourceTag: nullableText, revision: nullableText, id: nullableText })
@@ -95,9 +101,15 @@ export const productChangeImpact = defineAgentTool({
     affectedProcesses: z.array(
       z.object({ name: z.string(), linkType: nullableText, sourceTag: nullableText, viaPart: nullableText })
     ),
+    traceLinks: z.array(
+      z.object({ name: z.string(), linkType: z.string(), sourceTag: nullableText, viaPart: nullableText })
+    ),
     message: nullableText,
   }),
-  handler: async (input) => analyseChangeImpact(input.partName),
+  handler: async (input) =>
+    input.changeName
+      ? analyseChangeImpact(input.changeName, { asChange: true })
+      : analyseChangeImpact(input.partName as string),
 });
 
 export const productSimilarParts = defineAgentTool({
@@ -194,7 +206,7 @@ export const productLinkSupplier = defineAgentTool({
   description:
     "Record that a supplier can make a part, with optional price, lead time and supplier part number. " +
     "Creates the link as CANDIDATE unless told otherwise; only approve a source when the user says " +
-    "it is qualified. Needs the part id and name from product_search_parts and a supplier id.",
+    "it is qualified. Needs a part id from product_search_parts and a supplier id.",
   permission: "product:write",
   mutates: true,
   input: linkSupplierSchema,
