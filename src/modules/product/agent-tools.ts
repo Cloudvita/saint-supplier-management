@@ -12,6 +12,7 @@ import {
   listSourcesForPart,
 } from "./services/sourcing.service";
 import { linkSupplierSchema, partSourceStatuses } from "./domain/sourcing";
+import { addTriples, graphContext, traceIndirectRisks } from "./services/procurement-graph.service";
 
 /**
  * Product knowledge graph capabilities for the AI layer.
@@ -214,6 +215,81 @@ export const productLinkSupplier = defineAgentTool({
   handler: async (input, ctx) => linkSupplierToPart(input, ctx.userId),
 });
 
+/* ---------------------- procurement knowledge graph ---------------------- */
+
+const ontologyTriple = z.object({
+  source_id: z.string().min(1).max(200),
+  source_type: z.string().min(1).max(40),
+  relation: z.string().min(1).max(40),
+  target_id: z.string().min(1).max(200),
+  target_type: z.string().min(1).max(40),
+  properties: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+});
+
+export const networkTraceRisk = defineAgentTool({
+  name: "network_trace_risk",
+  module: "product",
+  description:
+    "Indirect supply-chain risk for a supplier: risk events (breaches, outages, disputes) that reach it directly " +
+    "or through a sub-tier vendor it depends on or a location it operates in, each with the propagation path " +
+    "(A -> B -> C) and hop distance, plus the parts it is sole source for. Takes a supplier id, code or name.",
+  permission: "product:read",
+  input: z.object({
+    supplier: z.string().min(1).max(200),
+    maxHops: z.number().int().min(1).max(6).default(3),
+  }),
+  output: z.object({
+    supplier: z.string(),
+    indirect_risks: z.array(
+      z.object({
+        supplier: z.string(),
+        risk_event: z.string(),
+        hop_distance: z.number(),
+        propagation_path: z.string(),
+        details: z.record(z.unknown()),
+      })
+    ),
+    exposed_parts: z.object({ linked: z.number(), sole_source: z.array(z.string()) }).nullable(),
+  }),
+  handler: async (input) => traceIndirectRisks(input.supplier, input.maxHops),
+});
+
+export const networkContext = defineAgentTool({
+  name: "network_context",
+  module: "product",
+  description:
+    "The supply-network knowledge graph as relationship lines — suppliers, sub-tier vendors, contracts, " +
+    "categories, locations, risk events — optionally limited to two hops around one entity. Use to ground " +
+    "answers about dependencies; answer only from what it returns.",
+  permission: "product:read",
+  input: z.object({ focus: z.string().min(1).max(200).optional() }),
+  output: z.object({ context: z.string() }),
+  handler: async (input) => ({ context: await graphContext(input.focus) }),
+});
+
+export const networkAddTriples = defineAgentTool({
+  name: "network_add_triples",
+  module: "product",
+  description:
+    "Add supply-network facts stated in a document as ontology triples (e.g. Supplier DEPENDS_ON SubTierVendor, " +
+    "SubTierVendor OPERATES_IN Location, RiskEvent IMPACTS SubTierVendor). Triples outside the ontology, or naming " +
+    "a supplier or contract that is not in SAINT, are rejected with a reason. Only add what the user's document states.",
+  permission: "product:write",
+  mutates: true,
+  input: z.object({
+    document: z.string().min(1).max(200),
+    triples: z.array(ontologyTriple).min(1).max(100),
+  }),
+  output: z.object({
+    accepted_triples: z.number(),
+    rejected_out_of_schema: z.number(),
+    new_relationships: z.number(),
+    new_entities: z.number(),
+    rejections: z.array(z.object({ index: z.number(), reason: z.string() })),
+  }),
+  handler: async (input, ctx) => addTriples(input.triples, { document: input.document, createdBy: ctx.userId }),
+});
+
 export const productAgentTools: AgentToolDefinition[] = [
   searchProductParts,
   productPartLinks,
@@ -222,4 +298,7 @@ export const productAgentTools: AgentToolDefinition[] = [
   productPartSuppliers,
   productSupplierParts,
   productLinkSupplier,
+  networkTraceRisk,
+  networkContext,
+  networkAddTriples,
 ] as unknown as AgentToolDefinition[];

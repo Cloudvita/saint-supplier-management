@@ -8,6 +8,12 @@
  * PMem's functionality as a SAINT module: the graph lives in SAINT's own
  * Postgres, not Neo4j, and no separate service is involved. Depends on
  * `/suppliers` through its barrel to check the supplier side of a link.
+ *
+ * Also holds the procurement knowledge graph (services/procurement-graph):
+ * SAINT's suppliers, contracts and risk alerts projected into the graph, plus
+ * sub-tier vendors, locations and risk events added from documents, all
+ * checked against the S.A.I.N.T. ontology (domain/procurement-ontology).
+ * Depends on `/contracts` through its barrel for the projection.
  */
 export {
   searchParts,
@@ -64,5 +70,16 @@ export type { PartSource, GraphNode, GraphEdge, GraphSource, GraphImport } from 
 export type { GraphDocument } from "./domain/graph-document";
 
 export { EDGE_TYPES, CLASSES, type EdgeType } from "./domain/graph-model";
+
+export {
+  syncProcurementProjection,
+  addTriples,
+  traceIndirectRisks,
+  graphContext,
+  procurementSchema,
+  seedDemoNetwork,
+} from "./services/procurement-graph.service";
+
+export { NODE_TYPES, RELATIONSHIPS, ontologySchema, tripleError } from "./domain/procurement-ontology";
 
 export { productAgentTools } from "./agent-tools";

@@ -7,7 +7,7 @@ import { suppliers } from "@/modules/suppliers/schema";
 import { buildDemoRows } from "@/modules/suppliers/domain/seed-data";
 import { createUser, syncRoleCatalogue, createTeam, listUsers, updateUser } from "@/modules/user_admin";
 import { setPassword } from "@/modules/auth";
-import { seedDemoProductGraph } from "@/modules/product";
+import { seedDemoNetwork, seedDemoProductGraph } from "@/modules/product";
 
 const log = createLogger("seed");
 
@@ -71,7 +71,12 @@ export async function seed() {
   const seededProductGraph = await seedDemoProductGraph();
   log.info(seededProductGraph ? "demo product graph seeded" : "product graph seed skipped");
 
-  return { seededSuppliers, seededAdmin, seededProductGraph, roles: roles.length };
+  // 5. The demo supply network (sub-tier host, location, breach) on the demo
+  //    suppliers, only into an empty network.
+  const seededSupplyNetwork = await seedDemoNetwork();
+  log.info(seededSupplyNetwork ? "demo supply network seeded" : "supply network seed skipped");
+
+  return { seededSuppliers, seededAdmin, seededProductGraph, seededSupplyNetwork, roles: roles.length };
 }
 
 // Allow `npm run db:seed` to execute this file directly.
