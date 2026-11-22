@@ -93,7 +93,8 @@ npm run pmem:dev              # http://127.0.0.1:8100 (8000 is the agent service
 
 Load engineering files (STEP, XSD, XMI, PLMXML) through PMem's own UI in `PMem/frontend`.
 PMem has no authentication: keep it on a network only SAINT can reach. After pulling
-the product changes, run `npm run db:migrate` (adds `part_sources` and part columns on requisitions and POs) and `npm run db:seed` once so
+the product changes, run `npm run db:migrate` locally (Vercel production builds migrate automatically, see
+below) and `npm run db:seed` once so
 existing roles pick up `product:read` and `product:write`.
 
 ## Scripts
@@ -103,7 +104,8 @@ existing roles pick up `product:read` and `product:write`.
 | `npm run dev` | Dev server |
 | `npm run build` | Production build (standalone output) |
 | `npm run db:generate` | Generate a new SQL migration after editing `src/db/schema.ts` |
-| `npm run db:migrate` | Apply migrations |
+| `npm run db:migrate` | Apply migrations (local development) |
+| `npm run db:migrate:deploy` | The deploy-time migrator, forced on: adopts a database without a migration journal, takes a lock, applies pending migrations |
 | `npm run db:push` | Push schema without a migration file (dev only) |
 | `npm run db:seed` | Insert 10 demo suppliers |
 | `npm run db:studio` | Drizzle Studio |
@@ -152,6 +154,12 @@ the keyword rules with an LLM call without touching the providers.
 ## Deployment
 
 See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the full AWS + GitHub walkthrough.
+
+**Vercel production builds migrate the database before building.** If a migration fails, the build
+fails and the current deployment stays live, so code never goes out ahead of its schema. Preview
+builds don't migrate. `/api/health` shows `dependencies.database.pending`. Migrations must be safe to
+apply while the previous release is still serving; see "Schema changes ship with the code" in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Security notes
 

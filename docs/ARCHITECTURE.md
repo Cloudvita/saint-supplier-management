@@ -268,6 +268,37 @@ cd backend && ./venv/bin/uvicorn saint_agents.main:app --reload --port 8000
 The agent service is optional: the application runs without it, and
 `/api/health` reports it as unreachable rather than failing.
 
+### Schema changes ship with the code
+
+Code and database schema deploy as one step, so new code can never go live
+ahead of its database:
+
+- **Production builds migrate first.** `npm run build` runs
+  `scripts/migrate.mjs` before `next build`. On a Vercel production build
+  (`VERCEL_ENV=production`) it applies pending migrations using production's
+  own `DATABASE_URL`. If that fails, the build fails, and Vercel keeps serving
+  the current deployment. Preview, local and Docker builds skip it unless
+  `MIGRATE_ON_BUILD=1`, so a preview can never migrate the database
+  production is serving.
+- **Direct connection, one migrator at a time.** A pooled Neon (`-pooler`) or
+  Supabase (port 6543) URL is switched to its direct form, or set
+  `MIGRATION_DATABASE_URL`. A Postgres advisory lock stops two projects that
+  build the same commit from migrating at once.
+- **Existing databases are adopted, not re-created.** A database built
+  without Drizzle's journal (from a schema file or `db:push`) has the
+  migrations whose changes are already present recorded as applied, then
+  the rest run. If the schema matches no point in the history, the build
+  fails rather than guess.
+- **`/api/health` reports drift.** `dependencies.database` gives the expected
+  and applied migration and the number pending; `status` is `degraded` while
+  anything is pending.
+
+This only works if every migration is safe to run **before** the code that
+needs it is live: the previous deployment keeps serving traffic while the new
+one builds. Add columns and tables freely; make new columns nullable or give
+them a default. To remove or rename something, do it in two releases: stop
+using it first, then drop it in a later migration.
+
 ---
 
 ## 7. Adding to the system
