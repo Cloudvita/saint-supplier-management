@@ -147,6 +147,13 @@ the `PMem/` folder is kept as reference only and is not run. After pulling the p
 see below) and `npm run db:seed` once so existing roles pick up `product:read`
 and `product:write`.
 
+On a live environment, update only the roles, with no demo suppliers, no
+administrator account and no demo graph:
+
+```bash
+curl -X POST "https://<your-site>/api/admin/seed?only=roles" -H "Authorization: Bearer $CRON_SECRET"
+```
+
 ## Scripts
 
 | Script | Purpose |
