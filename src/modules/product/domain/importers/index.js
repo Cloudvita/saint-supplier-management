@@ -1,37 +1,31 @@
-import { readExcelSheets } from "./excel";
-import { stepToGraph } from "./step/ap242";
-import { boModelXmlToGraph } from "./step/bo-model-xml";
-import { stepPackageToGraph } from "./step/package";
-import { parseDelimited, rowsToGraph, type ParsedImport } from "./tabular";
+// @ts-check
+import { stepToGraph } from "./step/ap242.js";
+import { boModelXmlToGraph } from "./step/bo-model-xml.js";
+import { stepPackageToGraph } from "./step/package.js";
+import { parseDelimited, rowsToGraph } from "./tabular.js";
+import { decodeText } from "./text.js";
+import { readXlsx } from "./xlsx.js";
 
 /**
  * The importer registry: which formats SAINT can read into the product
  * graph, chosen by file extension. PLMXML and XMI join this list as they
- * are ported from PMem.
+ * are ported from PMem. Every reader here is plain JavaScript on Node's
+ * built-ins (zlib for zip and .xlsx); no npm packages.
+ *
+ * @typedef {import("../graph-document.js").ParsedImport} ParsedImport
+ * @typedef {{
+ *   format: string;
+ *   label: string;
+ *   extensions: string[];
+ *   parse: (data: Uint8Array, fileName: string) => Promise<ParsedImport>;
+ * }} Importer
  */
-export type Importer = {
-  format: string;
-  label: string;
-  extensions: string[];
-  parse: (data: Uint8Array, fileName: string) => Promise<ParsedImport>;
-};
 
-const baseName = (fileName: string) => fileName.replace(/\.[^.]+$/, "");
+/** @param {string} fileName */
+const baseName = (fileName) => fileName.replace(/\.[^.]+$/, "");
 
-/**
- * STEP files are text, nominally ISO 8859-1 with non-ASCII escaped; real
- * exporters also write raw UTF-8. Decode as UTF-8 when the bytes are valid
- * UTF-8, else as Latin-1, so neither kind is mangled.
- */
-function decodeText(data: Uint8Array): string {
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(data);
-  } catch {
-    return new TextDecoder("latin1").decode(data);
-  }
-}
-
-export const IMPORTERS: Importer[] = [
+/** @type {Importer[]} */
+export const IMPORTERS = [
   {
     format: "CSV",
     label: "Parts list / BOM (CSV, TSV)",
@@ -62,7 +56,7 @@ export const IMPORTERS: Importer[] = [
     label: "Parts list / BOM (Excel .xlsx)",
     extensions: [".xlsx"],
     parse: async (data, fileName) => {
-      const sheets = await readExcelSheets(data);
+      const sheets = readXlsx(data);
       const first = sheets.find((s) => s.rows.some((r) => r.some((c) => c !== null && c !== "")));
       if (!first) return { document: { format: "EXCEL", name: baseName(fileName), nodes: [], edges: [] }, warnings: ["The workbook has no data"] };
       const parsed = rowsToGraph(first.rows, { format: "EXCEL", name: baseName(fileName) });
@@ -73,9 +67,11 @@ export const IMPORTERS: Importer[] = [
   },
 ];
 
-export function importerFor(fileName: string): Importer | null {
+/**
+ * @param {string} fileName
+ * @returns {Importer | null}
+ */
+export function importerFor(fileName) {
   const ext = fileName.toLowerCase().match(/\.[^.]+$/)?.[0] ?? "";
   return IMPORTERS.find((i) => i.extensions.includes(ext)) ?? null;
 }
-
-export type { ParsedImport } from "./tabular";

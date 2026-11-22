@@ -1,5 +1,5 @@
-import { CLASSES, EDGE_TYPES } from "../graph-model";
-import type { GraphDocument, GraphDocumentEdge, GraphDocumentNode } from "../graph-document";
+// @ts-check
+import { CLASSES, EDGE_TYPES } from "../graph-model.js";
 
 /**
  * Parts lists and BOMs from spreadsheets (CSV, TSV, Excel) into a graph.
@@ -21,15 +21,19 @@ import type { GraphDocument, GraphDocumentEdge, GraphDocumentNode } from "../gra
  * Every other column is kept as a property under its original heading. A part
  * that appears on several rows (used in several assemblies) becomes one node
  * with several parents.
+ *
+ * @typedef {import("../graph-document.js").ParsedImport} ParsedImport
+ * @typedef {import("../graph-document.js").GraphDocumentNode} GraphDocumentNode
+ * @typedef {import("../graph-document.js").GraphDocumentEdge} GraphDocumentEdge
+ * @typedef {string | number | boolean | Date | null | undefined} Cell
+ * @typedef {"name" | "key" | "parent" | "level" | "quantity" | "class" | "layer"} Role
  */
 
-export type ParsedImport = { document: GraphDocument; warnings: string[] };
+/** @param {string} s */
+const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-type Cell = string | number | boolean | Date | null | undefined;
-
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-const ROLE_ALIASES: Record<string, string[]> = {
+/** @type {Record<Role, string[]>} */
+const ROLE_ALIASES = {
   name: ["name", "partname", "itemname", "componentname", "description", "title"],
   key: ["partnumber", "partno", "pn", "itemid", "itemnumber", "itemno", "id", "number", "key"],
   parent: ["parent", "parentid", "parentpartnumber", "parentpn", "parentkey", "parentitem", "parentname", "assembly"],
@@ -39,7 +43,8 @@ const ROLE_ALIASES: Record<string, string[]> = {
   layer: ["rflp", "rflplayer", "layer"],
 };
 
-const LINK_COLUMNS: Record<string, string> = {
+/** @type {Record<string, string>} */
+const LINK_COLUMNS = {
   satisfies: EDGE_TYPES.SATISFIES,
   realizes: EDGE_TYPES.REALIZES,
   tracesto: EDGE_TYPES.TRACES_TO,
@@ -50,7 +55,8 @@ const LINK_COLUMNS: Record<string, string> = {
   changeaffects: EDGE_TYPES.CHANGE_AFFECTS,
 };
 
-const CLASS_ALIASES: Record<string, string> = {
+/** @type {Record<string, string>} */
+const CLASS_ALIASES = {
   part: CLASSES.PART,
   component: CLASSES.PART,
   assembly: CLASSES.ASSEMBLY,
@@ -80,15 +86,22 @@ const MAX_WARNINGS = 200;
  * RFC 4180 CSV: quoted fields, doubled quotes, newlines inside quotes, CRLF,
  * and a UTF-8 byte-order mark. The delimiter (, ; tab |) is taken from the
  * header line — European Excel exports use semicolons.
+ *
+ * @param {string} text
+ * @returns {string[][]}
  */
-export function parseDelimited(text: string): string[][] {
+export function parseDelimited(text) {
   const src = text.replace(/^﻿/, "");
   const firstLine = src.slice(0, src.search(/\r?\n|$/));
-  const counts = [",", ";", "\t", "|"].map((d) => [d, firstLine.split(d).length - 1] as const);
-  const delimiter = counts.sort((a, b) => b[1] - a[1])[0][1] > 0 ? counts[0][0] : ",";
+  const counts = [",", ";", "\t", "|"]
+    .map((d) => /** @type {const} */ ([d, firstLine.split(d).length - 1]))
+    .sort((a, b) => b[1] - a[1]);
+  const delimiter = counts[0][1] > 0 ? counts[0][0] : ",";
 
-  const rows: string[][] = [];
-  let row: string[] = [];
+  /** @type {string[][]} */
+  const rows = [];
+  /** @type {string[]} */
+  let row = [];
   let field = "";
   let quoted = false;
   for (let i = 0; i < src.length; i++) {
@@ -126,28 +139,41 @@ export function parseDelimited(text: string): string[][] {
 
 /* ------------------------------ rows → graph ----------------------------- */
 
-function cellText(v: Cell): string {
+/** @param {Cell} v */
+function cellText(v) {
   if (v === null || v === undefined) return "";
   if (v instanceof Date) return v.toISOString().slice(0, 10);
   return String(v).trim();
 }
 
-function cellValue(v: Cell): string | number | boolean | null {
+/**
+ * @param {Cell} v
+ * @returns {string | number | boolean | null}
+ */
+function cellValue(v) {
   if (v === null || v === undefined) return null;
   if (v instanceof Date) return v.toISOString().slice(0, 10);
   if (typeof v === "string") return v.trim() === "" ? null : v.trim();
   return v;
 }
 
-function className(raw: string): string | null {
+/** @param {string} raw */
+function className(raw) {
   if (!raw) return null;
   return CLASS_ALIASES[norm(raw)] ?? raw.trim().replace(/^\w/, (c) => c.toUpperCase());
 }
 
-/** Turn a sheet (header row first) into a graph document. */
-export function rowsToGraph(rows: Cell[][], opts: { format: string; name: string }): ParsedImport {
-  const warnings: string[] = [];
-  const warn = (msg: string) => {
+/**
+ * Turn a sheet (header row first) into a graph document.
+ * @param {Cell[][]} rows
+ * @param {{ format: string; name: string }} opts
+ * @returns {ParsedImport}
+ */
+export function rowsToGraph(rows, opts) {
+  /** @type {string[]} */
+  const warnings = [];
+  /** @param {string} msg */
+  const warn = (msg) => {
     if (warnings.length < MAX_WARNINGS) warnings.push(msg);
     else if (warnings.length === MAX_WARNINGS) warnings.push("… more warnings not shown");
   };
@@ -165,20 +191,23 @@ export function rowsToGraph(rows: Cell[][], opts: { format: string; name: string
   }
 
   // Which column plays which role. First match wins, in the alias order above.
-  const col: Partial<Record<keyof typeof ROLE_ALIASES, number>> = {};
+  /** @type {Partial<Record<Role, number>>} */
+  const col = {};
   const normalised = header.map(norm);
-  for (const [role, aliases] of Object.entries(ROLE_ALIASES)) {
+  for (const [role, aliases] of /** @type {Array<[Role, string[]]>} */ (Object.entries(ROLE_ALIASES))) {
     for (const alias of aliases) {
       const i = normalised.findIndex((h, idx) => h === alias && !Object.values(col).includes(idx));
       if (i !== -1) {
-        col[role as keyof typeof ROLE_ALIASES] = i;
+        col[role] = i;
         break;
       }
     }
   }
-  const linkCols = normalised
-    .map((h, i) => [LINK_COLUMNS[h], i] as const)
-    .filter((x): x is readonly [string, number] => Boolean(x[0]));
+  /** @type {Array<[string, number]>} */
+  const linkCols = [];
+  normalised.forEach((h, i) => {
+    if (LINK_COLUMNS[h]) linkCols.push([LINK_COLUMNS[h], i]);
+  });
 
   if (col.name === undefined && col.key === undefined) {
     col.name = 0;
@@ -188,19 +217,24 @@ export function rowsToGraph(rows: Cell[][], opts: { format: string; name: string
     warn("Both a parent and a level column are present; using the parent column");
   }
 
-  const roleCols = new Set<number>([
-    ...Object.values(col).filter((i): i is number => i !== undefined),
+  const roleCols = new Set([
+    ...Object.values(col).filter((i) => i !== undefined),
     ...linkCols.map(([, i]) => i),
   ]);
-  const propertyCols = header.map((h, i) => [h, i] as const).filter(([h, i]) => h && !roleCols.has(i));
+  const propertyCols = header.map((h, i) => /** @type {const} */ ([h, i])).filter(([h, i]) => h && !roleCols.has(i));
 
-  const nodes = new Map<string, GraphDocumentNode>();
-  const keyByName = new Map<string, string>();
-  type Pending = { childKey: string; ref: string; quantity: number | null; row: number };
-  const parentRefs: Pending[] = [];
-  const linkRefs: Array<{ fromKey: string; ref: string; type: string; row: number }> = [];
-  const levelStack: string[] = [];
-  const levelParents: Array<{ parentKey: string; childKey: string; quantity: number | null }> = [];
+  /** @type {Map<string, GraphDocumentNode>} */
+  const nodes = new Map();
+  /** @type {Map<string, string>} */
+  const keyByName = new Map();
+  /** @type {Array<{ childKey: string; ref: string; quantity: number | null; row: number }>} */
+  const parentRefs = [];
+  /** @type {Array<{ fromKey: string; ref: string; type: string; row: number }>} */
+  const linkRefs = [];
+  /** @type {string[]} */
+  const levelStack = [];
+  /** @type {Array<{ parentKey: string; childKey: string; quantity: number | null }>} */
+  const levelParents = [];
 
   body.forEach(({ r, rowNo }) => {
     const name = cellText(r[col.name ?? -1]) || cellText(r[col.key ?? -1]);
@@ -219,13 +253,14 @@ export function rowsToGraph(rows: Cell[][], opts: { format: string; name: string
       // The same part on another row: another place it is used, not a new part.
       if (existing.name !== name) warn(`Row ${rowNo}: part ${key} is named "${name}" here but "${existing.name}" earlier; kept the first`);
     } else {
-      const properties: Record<string, unknown> = {};
+      /** @type {Record<string, unknown>} */
+      const properties = {};
       for (const [h, i] of propertyCols) {
         const v = cellValue(r[i]);
         if (v !== null) properties[h] = v;
       }
       const layerText = cellText(r[col.layer ?? -1]).toUpperCase();
-      const layer = (["R", "F", "L", "P"] as const).find((l) => l === layerText[0]) ?? null;
+      const layer = /** @type {const} */ (["R", "F", "L", "P"]).find((l) => l === layerText[0]) ?? null;
       if (layerText && !layer) warn(`Row ${rowNo}: RFLP layer "${layerText}" is not R, F, L or P; ignored`);
       const rawClass = cellText(r[col.class ?? -1]);
       nodes.set(key, {
@@ -266,9 +301,16 @@ export function rowsToGraph(rows: Cell[][], opts: { format: string; name: string
     }
   });
 
-  const resolve = (ref: string) => (nodes.has(ref) ? ref : keyByName.get(ref.toLowerCase()));
-  const edges: GraphDocumentEdge[] = [];
-  const childEdge = (from: string, to: string, quantity: number | null) => {
+  /** @param {string} ref */
+  const resolve = (ref) => (nodes.has(ref) ? ref : keyByName.get(ref.toLowerCase()));
+  /** @type {GraphDocumentEdge[]} */
+  const edges = [];
+  /**
+   * @param {string} from
+   * @param {string} to
+   * @param {number | null} quantity
+   */
+  const childEdge = (from, to, quantity) => {
     if (from === to) return;
     edges.push({ from, to, type: EDGE_TYPES.HAS_CHILD, properties: quantity === null ? {} : { quantity } });
   };

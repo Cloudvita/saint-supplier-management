@@ -1,5 +1,5 @@
-import { CLASSES, EDGE_TYPES } from "./graph-model";
-import type { GraphDocument } from "./graph-document";
+// @ts-check
+import { CLASSES, EDGE_TYPES } from "./graph-model.js";
 
 /**
  * A small product graph for a 5 HP induction motor, so the product features
@@ -7,7 +7,8 @@ import type { GraphDocument } from "./graph-document";
  * numbers follow the sample STEP files PMem shipped with
  * (000678–000687, PMem/backend/STP).
  */
-export const DEMO_MOTOR_GRAPH: GraphDocument = {
+/** @type {import("./graph-document.js").GraphDocument} */
+export const DEMO_MOTOR_GRAPH = {
   format: "SEED",
   name: "Demo: 5 HP induction motor",
   nodes: [

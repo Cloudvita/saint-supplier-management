@@ -1,26 +1,23 @@
-import type { GraphNode } from "../schema";
+// @ts-check
 
 /**
  * The product view of graph nodes, and the pure helpers the analyses share.
+ *
+ * @typedef {{
+ *   id: string;
+ *   name: string;
+ *   labels: string[];
+ *   className: string | null;
+ *   sourceTag: string | null;
+ *   properties: Record<string, string | number | boolean>;
+ * }} ProductNode
+ *   `labels` is the node's ontology class as a one-element list (empty when
+ *   unclassified); `sourceTag` the element type in the file it came from.
+ *
+ * @typedef {{ relation: string; direction: "out" | "in"; node: ProductNode }} ProductLink
+ *   `direction` is `out` when the part points at the other node, `in` when it
+ *   is pointed at.
  */
-
-export type ProductNode = {
-  id: string;
-  name: string;
-  /** The node's ontology class as a one-element list (empty when unclassified). */
-  labels: string[];
-  className: string | null;
-  /** The element type in the file it came from (STEP entity, PLMXML tag ...). */
-  sourceTag: string | null;
-  properties: Record<string, string | number | boolean>;
-};
-
-export type ProductLink = {
-  relation: string;
-  /** `out` when the part points at the other node, `in` when it is pointed at. */
-  direction: "out" | "in";
-  node: ProductNode;
-};
 
 /**
  * Imported nodes can carry raw text, geometry references and the like. Only
@@ -31,8 +28,13 @@ const MAX_PROPERTIES = 25;
 const MAX_STRING_LENGTH = 300;
 const SKIPPED_KEYS = /embedding|vector|body_?text|raw/i;
 
-export function scalarProperties(properties: Record<string, unknown>): ProductNode["properties"] {
-  const out: ProductNode["properties"] = {};
+/**
+ * @param {Record<string, unknown>} properties
+ * @returns {ProductNode["properties"]}
+ */
+export function scalarProperties(properties) {
+  /** @type {ProductNode["properties"]} */
+  const out = {};
   for (const [key, value] of Object.entries(properties ?? {})) {
     if (Object.keys(out).length >= MAX_PROPERTIES) break;
     if (SKIPPED_KEYS.test(key)) continue;
@@ -45,7 +47,11 @@ export function scalarProperties(properties: Record<string, unknown>): ProductNo
   return out;
 }
 
-export function toProductNode(node: Pick<GraphNode, "id" | "name" | "className" | "sourceTag" | "properties">): ProductNode {
+/**
+ * @param {{ id: string; name: string; className: string | null; sourceTag: string | null; properties: Record<string, unknown> }} node
+ * @returns {ProductNode}
+ */
+export function toProductNode(node) {
   return {
     id: node.id,
     name: node.name,
@@ -60,10 +66,16 @@ export function toProductNode(node: Pick<GraphNode, "id" | "name" | "className" 
  * Pick the closest name to what was asked for. PMem used difflib's ratio;
  * this ranks the cases that matter in practice: exact (ignoring case), then
  * prefix, then the shortest name containing the query — i.e. the least extra.
+ *
+ * @template {{ name: string }} T
+ * @param {string} query
+ * @param {T[]} candidates
+ * @returns {T | null}
  */
-export function bestNameMatch<T extends { name: string }>(query: string, candidates: T[]): T | null {
+export function bestNameMatch(query, candidates) {
   const q = query.trim().toLowerCase();
-  let best: { item: T; rank: number } | null = null;
+  /** @type {{ item: T; rank: number } | null} */
+  let best = null;
   for (const item of candidates) {
     const name = item.name.toLowerCase();
     const rank = name === q ? 0 : name.startsWith(q) ? 1 + name.length / 1000 : name.includes(q) ? 2 + name.length / 1000 : 3;

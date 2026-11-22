@@ -1,10 +1,10 @@
+// @ts-check
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/core/db";
 import { AppError } from "@/core/errors";
 import { createLogger } from "@/core/logger";
-import { graphEdges, graphNodes, graphSources, type GraphSource } from "../schema";
-import { DEMO_MOTOR_GRAPH } from "../domain/demo-graph";
-import type { GraphDocument } from "../domain/graph-document";
+import { graphEdges, graphNodes, graphSources } from "../schema";
+import { DEMO_MOTOR_GRAPH } from "../domain/demo-graph.js";
 
 const log = createLogger("product.graph-writer");
 
@@ -14,8 +14,10 @@ const log = createLogger("product.graph-writer");
  * Every importer (STEP, CSV, PLMXML, XMI) parses its format into a
  * GraphDocument and hands it here, so validation, ids and transactions are
  * written once.
+ *
+ * @typedef {import("../domain/graph-document.js").GraphDocument} GraphDocument
+ * @typedef {import("../schema").GraphSource} GraphSource
  */
-export type { GraphDocument } from "../domain/graph-document";
 
 /** Rows per INSERT: well under Postgres's 65,535 bind-parameter limit. */
 const BATCH = 500;
@@ -27,13 +29,15 @@ const BATCH = 500;
  * transaction — a re-import. Nodes whose key (id in the file) is unchanged
  * keep their database id, so supplier links, requisitions and purchase
  * orders that name them still point at the same part.
+ *
+ * @param {GraphDocument} doc
+ * @param {string} [importedBy]
+ * @param {{ replaceSourceId?: string }} [opts]
+ * @returns {Promise<GraphSource>}
  */
-export async function writeGraph(
-  doc: GraphDocument,
-  importedBy = "system",
-  opts: { replaceSourceId?: string } = {}
-): Promise<GraphSource> {
-  const keys = new Set<string>();
+export async function writeGraph(doc, importedBy = "system", opts = {}) {
+  /** @type {Set<string>} */
+  const keys = new Set();
   for (const n of doc.nodes) {
     if (keys.has(n.key)) throw AppError.validation(`Duplicate node key "${n.key}" in ${doc.name}`);
     keys.add(n.key);
@@ -45,7 +49,8 @@ export async function writeGraph(
   }
 
   const source = await db.transaction(async (tx) => {
-    const keptIds = new Map<string, string>();
+    /** @type {Map<string, string>} */
+    const keptIds = new Map();
     if (opts.replaceSourceId) {
       const old = await tx
         .select({ key: graphNodes.externalKey, id: graphNodes.id })
@@ -59,12 +64,10 @@ export async function writeGraph(
       for (const o of old) if (o.key) keptIds.set(o.key, o.id);
     }
 
-    const [src] = await tx
-      .insert(graphSources)
-      .values({ format: doc.format, name: doc.name, importedBy })
-      .returning();
+    const [src] = await tx.insert(graphSources).values({ format: doc.format, name: doc.name, importedBy }).returning();
 
-    const idByKey = new Map<string, string>();
+    /** @type {Map<string, string>} */
+    const idByKey = new Map();
     for (let i = 0; i < doc.nodes.length; i += BATCH) {
       const rows = await tx
         .insert(graphNodes)
@@ -81,7 +84,7 @@ export async function writeGraph(
           }))
         )
         .returning({ id: graphNodes.id, key: graphNodes.externalKey });
-      for (const r of rows) idByKey.set(r.key as string, r.id);
+      for (const r of rows) if (r.key !== null) idByKey.set(r.key, r.id);
     }
 
     // Same type between the same two nodes is one relationship, however many
@@ -90,8 +93,8 @@ export async function writeGraph(
     for (let i = 0; i < edges.length; i += BATCH) {
       await tx.insert(graphEdges).values(
         edges.slice(i, i + BATCH).map((e) => ({
-          fromId: idByKey.get(e.from) as string,
-          toId: idByKey.get(e.to) as string,
+          fromId: /** @type {string} */ (idByKey.get(e.from)),
+          toId: /** @type {string} */ (idByKey.get(e.to)),
           type: e.type,
           sourceId: src.id,
           properties: e.properties ?? {},
@@ -116,8 +119,12 @@ export async function writeGraph(
   return source;
 }
 
-/** Remove a source and, by cascade, its nodes and edges. */
-export async function removeGraphSource(id: string): Promise<void> {
+/**
+ * Remove a source and, by cascade, its nodes and edges.
+ * @param {string} id
+ * @returns {Promise<void>}
+ */
+export async function removeGraphSource(id) {
   const deleted = await db.delete(graphSources).where(eq(graphSources.id, id)).returning({ id: graphSources.id });
   if (deleted.length === 0) throw AppError.notFound("Graph source");
 }
@@ -125,14 +132,16 @@ export async function removeGraphSource(id: string): Promise<void> {
 /**
  * Load the demo motor graph into an empty graph. A no-op once anything has
  * been imported, so seeding never mixes demo data into real data.
+ * @returns {Promise<boolean>}
  */
-export async function seedDemoProductGraph(): Promise<boolean> {
-  const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(graphSources);
+export async function seedDemoProductGraph() {
+  const [{ count }] = await db.select({ count: sql`count(*)::int`.mapWith(Number) }).from(graphSources);
   if (count > 0) return false;
   await writeGraph(DEMO_MOTOR_GRAPH, "seed");
   return true;
 }
 
-export async function listGraphSources(): Promise<GraphSource[]> {
+/** @returns {Promise<GraphSource[]>} */
+export async function listGraphSources() {
   return db.select().from(graphSources).orderBy(sql`${graphSources.createdAt} desc`);
 }

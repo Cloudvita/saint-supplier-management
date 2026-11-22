@@ -1,12 +1,12 @@
+// @ts-check
 import { and, desc, eq, lt, sql } from "drizzle-orm";
 import { db } from "@/core/db";
 import { AppError } from "@/core/errors";
 import { createLogger } from "@/core/logger";
-import { graphImports, type GraphImport, type GraphSource } from "../schema";
-import { IMPORTERS, importerFor } from "../domain/importers";
-import type { GraphDocument } from "../domain/graph-document";
-import { writeGraph } from "./graph-writer";
-import { existingKeys } from "./graph.repository";
+import { graphImports } from "../schema";
+import { IMPORTERS, importerFor } from "../domain/importers/index.js";
+import { writeGraph } from "./graph-writer.js";
+import { existingKeys } from "./graph.repository.js";
 
 const log = createLogger("product.import");
 
@@ -18,6 +18,36 @@ const log = createLogger("product.import");
  * Nothing enters the graph until the import is committed. Parsing happens in
  * the request: serverless hosting has no background workers, and the size
  * cap below keeps a parse well inside a request's time.
+ *
+ * @typedef {import("../domain/graph-document.js").GraphDocument} GraphDocument
+ * @typedef {import("../domain/graph-document.js").ParsedImport} ParsedImport
+ * @typedef {import("../schema").GraphImport} GraphImport
+ * @typedef {import("../schema").GraphSource} GraphSource
+ *
+ * @typedef {{
+ *   nodes: number;
+ *   edges: number;
+ *   classes: Array<{ className: string; count: number }>;
+ *   edgeTypes: Array<{ type: string; count: number }>;
+ *   topLevel: number;
+ *   sample: Array<{ key: string; name: string; className: string | null }>;
+ * }} ImportSummary
+ *   `classes` is the node count per class, largest first; `topLevel` the nodes
+ *   nothing points at with HAS_CHILD — the top of each assembly tree.
+ *
+ * @typedef {{
+ *   id: string;
+ *   format: string;
+ *   fileName: string;
+ *   status: GraphImport["status"];
+ *   summary: ImportSummary;
+ *   warnings: string[];
+ *   sourceId: string | null;
+ *   createdBy: string | null;
+ *   committedBy: string | null;
+ *   createdAt: string;
+ *   updatedAt: string;
+ * }} ImportView
  */
 
 /** Vercel caps a function's request body at 4.5 MB; stay under it with a clear message. */
@@ -26,38 +56,22 @@ export const MAX_IMPORT_BYTES = 4 * 1024 * 1024;
 const PREVIEW_TTL_DAYS = 7;
 const SAMPLE_SIZE = 10;
 
-export type ImportView = {
-  id: string;
-  format: string;
-  fileName: string;
-  status: GraphImport["status"];
-  summary: ImportSummary;
-  warnings: string[];
-  sourceId: string | null;
-  createdBy: string | null;
-  committedBy: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type ImportSummary = {
-  nodes: number;
-  edges: number;
-  /** Node count per class, largest first. */
-  classes: Array<{ className: string; count: number }>;
-  edgeTypes: Array<{ type: string; count: number }>;
-  /** Nodes nothing points at with HAS_CHILD: the top of each assembly tree. */
-  topLevel: number;
-  sample: Array<{ key: string; name: string; className: string | null }>;
-};
-
-function tally(values: string[]): Array<{ value: string; count: number }> {
-  const m = new Map<string, number>();
+/**
+ * @param {string[]} values
+ * @returns {Array<{ value: string; count: number }>}
+ */
+function tally(values) {
+  /** @type {Map<string, number>} */
+  const m = new Map();
   for (const v of values) m.set(v, (m.get(v) ?? 0) + 1);
   return [...m].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
 }
 
-export function summarise(doc: GraphDocument): ImportSummary {
+/**
+ * @param {GraphDocument} doc
+ * @returns {ImportSummary}
+ */
+export function summarise(doc) {
   const children = new Set(doc.edges.filter((e) => e.type === "HAS_CHILD").map((e) => e.to));
   return {
     nodes: doc.nodes.length,
@@ -69,13 +83,17 @@ export function summarise(doc: GraphDocument): ImportSummary {
   };
 }
 
-function toView(row: GraphImport): ImportView {
+/**
+ * @param {GraphImport} row
+ * @returns {ImportView}
+ */
+function toView(row) {
   return {
     id: row.id,
     format: row.format,
     fileName: row.fileName,
     status: row.status,
-    summary: row.summary as ImportSummary,
+    summary: /** @type {ImportSummary} */ (row.summary),
     warnings: row.warnings,
     sourceId: row.sourceId,
     createdBy: row.createdBy,
@@ -89,8 +107,13 @@ export function supportedFormats() {
   return IMPORTERS.map((i) => ({ format: i.format, label: i.label, extensions: i.extensions }));
 }
 
-/** Parse an uploaded file and stage it for review. */
-export async function stageImport(file: { name: string; bytes: Uint8Array }, createdBy: string): Promise<ImportView> {
+/**
+ * Parse an uploaded file and stage it for review.
+ * @param {{ name: string; bytes: Uint8Array }} file
+ * @param {string} createdBy
+ * @returns {Promise<ImportView>}
+ */
+export async function stageImport(file, createdBy) {
   if (file.bytes.byteLength === 0) throw AppError.badRequest("The file is empty");
   if (file.bytes.byteLength > MAX_IMPORT_BYTES) {
     throw AppError.badRequest(`The file is ${(file.bytes.byteLength / 1048576).toFixed(1)} MB; the limit is 4 MB`);
@@ -102,6 +125,7 @@ export async function stageImport(file: { name: string; bytes: Uint8Array }, cre
     throw AppError.badRequest(`"${file.name}" is not a supported format (${known})`);
   }
 
+  /** @type {ParsedImport} */
   let parsed;
   try {
     parsed = await importer.parse(file.bytes, file.name);
@@ -132,7 +156,7 @@ export async function stageImport(file: { name: string; bytes: Uint8Array }, cre
     .values({
       format: importer.format,
       fileName: file.name.slice(0, 300),
-      document: parsed.document as unknown as Record<string, unknown>,
+      document: /** @type {Record<string, unknown>} */ (/** @type {unknown} */ (parsed.document)),
       summary: summarise(parsed.document),
       warnings: parsed.warnings,
       createdBy,
@@ -143,25 +167,29 @@ export async function stageImport(file: { name: string; bytes: Uint8Array }, cre
   return toView(row);
 }
 
-async function expireOldPreviews(): Promise<void> {
+/** @returns {Promise<void>} */
+async function expireOldPreviews() {
   await db
     .update(graphImports)
     .set({ status: "CANCELLED", document: null })
-    .where(
-      and(
-        eq(graphImports.status, "PREVIEW"),
-        lt(graphImports.createdAt, sql`now() - make_interval(days => ${PREVIEW_TTL_DAYS})`)
-      )
-    );
+    .where(and(eq(graphImports.status, "PREVIEW"), lt(graphImports.createdAt, sql`now() - make_interval(days => ${PREVIEW_TTL_DAYS})`)));
 }
 
-export async function getImport(id: string): Promise<ImportView> {
+/**
+ * @param {string} id
+ * @returns {Promise<ImportView>}
+ */
+export async function getImport(id) {
   const [row] = await db.select().from(graphImports).where(eq(graphImports.id, id));
   if (!row) throw AppError.notFound("Import");
   return toView(row);
 }
 
-export async function listImports(limit = 25): Promise<ImportView[]> {
+/**
+ * @param {number} [limit]
+ * @returns {Promise<ImportView[]>}
+ */
+export async function listImports(limit = 25) {
   const rows = await db.select().from(graphImports).orderBy(desc(graphImports.createdAt)).limit(Math.min(limit, 100));
   return rows.map(toView);
 }
@@ -173,12 +201,13 @@ export async function listImports(limit = 25): Promise<ImportView[]> {
  *
  * The PREVIEW → COMMITTED claim happens first, so two people committing the
  * same preview cannot write it twice; a failed write hands it back.
+ *
+ * @param {string} id
+ * @param {string} committedBy
+ * @param {{ replaceSourceId?: string }} [opts]
+ * @returns {Promise<{ import: ImportView; source: GraphSource }>}
  */
-export async function commitImport(
-  id: string,
-  committedBy: string,
-  opts: { replaceSourceId?: string } = {}
-): Promise<{ import: ImportView; source: GraphSource }> {
+export async function commitImport(id, committedBy, opts = {}) {
   const [claimed] = await db
     .update(graphImports)
     .set({ status: "COMMITTED", committedBy })
@@ -189,24 +218,25 @@ export async function commitImport(
     throw AppError.conflict(`Import is ${existing.status.toLowerCase()}, not awaiting commit`);
   }
 
-  let source: GraphSource;
+  /** @type {GraphSource} */
+  let source;
   try {
-    source = await writeGraph(claimed.document as unknown as GraphDocument, committedBy, opts);
+    source = await writeGraph(/** @type {GraphDocument} */ (/** @type {unknown} */ (claimed.document)), committedBy, opts);
   } catch (e) {
     await db.update(graphImports).set({ status: "PREVIEW", committedBy: null }).where(eq(graphImports.id, id));
     throw e;
   }
 
-  const [done] = await db
-    .update(graphImports)
-    .set({ sourceId: source.id, document: null })
-    .where(eq(graphImports.id, id))
-    .returning();
+  const [done] = await db.update(graphImports).set({ sourceId: source.id, document: null }).where(eq(graphImports.id, id)).returning();
   log.info("import committed", { importId: id, sourceId: source.id, replaced: opts.replaceSourceId ?? null });
   return { import: toView(done), source };
 }
 
-export async function cancelImport(id: string): Promise<ImportView> {
+/**
+ * @param {string} id
+ * @returns {Promise<ImportView>}
+ */
+export async function cancelImport(id) {
   const [row] = await db
     .update(graphImports)
     .set({ status: "CANCELLED", document: null })

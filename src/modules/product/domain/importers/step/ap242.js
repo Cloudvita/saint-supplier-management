@@ -1,7 +1,6 @@
-import { CLASSES, EDGE_TYPES } from "../../graph-model";
-import type { GraphDocumentEdge, GraphDocumentNode } from "../../graph-document";
-import type { ParsedImport } from "../tabular";
-import { decodeStepString, including, num, ofType, parsePart21, ref, refs, str, type P21File } from "./part21";
+// @ts-check
+import { CLASSES, EDGE_TYPES } from "../../graph-model.js";
+import { decodeStepString, including, num, ofType, parsePart21, ref, refs, str } from "./part21.js";
 
 /**
  * STEP AP242 (and AP203/AP214, which share the product structure) into the
@@ -16,27 +15,41 @@ import { decodeStepString, including, num, ofType, parsePart21, ref, refs, str, 
  *
  * Geometry and presentation entities are read (they are most of the file)
  * and ignored.
+ *
+ * @typedef {import("../../graph-document.js").ParsedImport} ParsedImport
+ * @typedef {import("../../graph-document.js").GraphDocumentNode} GraphDocumentNode
+ * @typedef {import("../../graph-document.js").GraphDocumentEdge} GraphDocumentEdge
+ * @typedef {import("./part21.js").P21File} P21File
  */
 
 /**
  * Teamcenter / NX names a STEP product "000684_B;1-Rotor Shaft Machined":
  * item id, revision, sequence, name. Some exports use "_" for the ";".
+ *
+ * @param {string} raw
+ * @returns {{ partNumber: string; revision: string | null; name: string } | null}
  */
-export function splitTeamcenterName(raw: string): { partNumber: string; revision: string | null; name: string } | null {
+export function splitTeamcenterName(raw) {
   const m = /^([A-Za-z0-9.\-]+)_([A-Za-z0-9]{1,4})[;_](\d+)-(.+)$/.exec(raw.trim());
   return m ? { partNumber: m[1], revision: m[2], name: displayName(m[4]) } : null;
 }
 
-/** CAD names carry file-name underscores ("End Bell_Machined"); show them as spaces. */
-export function displayName(raw: string): string {
+/**
+ * CAD names carry file-name underscores ("End Bell_Machined"); show them as spaces.
+ * @param {string} raw
+ */
+export function displayName(raw) {
   return raw.replace(/_/g, " ").replace(/\s+/g, " ").trim();
 }
 
 /** Property definitions that are CAD validation checksums, not attributes of the part. */
 const VALIDATION_PROPERTY = /validation property$/i;
 
-/** Semantic PMI entity types, as (or within) instances. */
-const SEMANTIC_PMI: Record<string, string> = {
+/**
+ * Semantic PMI entity types, as (or within) instances.
+ * @type {Record<string, string>}
+ */
+const SEMANTIC_PMI = {
   GEOMETRIC_TOLERANCE: "tolerances",
   FLATNESS_TOLERANCE: "tolerances",
   CIRCULAR_RUNOUT_TOLERANCE: "tolerances",
@@ -75,8 +88,9 @@ const MAX_PMI_NOTES = 20;
 /**
  * CAx-IF "equivalent unicode string": the annotation's text, with its own
  * escapes (\X2\…\X0\ again, \w between fields of a feature control frame).
+ * @param {string} raw
  */
-function pmiText(raw: string): string {
+function pmiText(raw) {
   return decodeStepString(raw)
     .replace(/\\w/g, " ")
     .replace(/^FCF\s+/, "")
@@ -84,16 +98,23 @@ function pmiText(raw: string): string {
     .trim();
 }
 
-type Product = {
-  stepId: number;
-  key: string;
-  name: string;
-  revision: string | null;
-  description: string | null;
-  properties: Record<string, unknown>;
-};
+/**
+ * @typedef {{
+ *   stepId: number;
+ *   key: string;
+ *   name: string;
+ *   revision: string | null;
+ *   description: string | null;
+ *   properties: Record<string, unknown>;
+ * }} Product
+ */
 
-function propertyValue(file: P21File, repId: number): string | number | null {
+/**
+ * @param {P21File} file
+ * @param {number} repId
+ * @returns {string | number | null}
+ */
+function propertyValue(file, repId) {
   const rep = file.entities.get(repId);
   if (!rep) return null;
   for (const itemId of refs(rep.params[0][1])) {
@@ -106,13 +127,19 @@ function propertyValue(file: P21File, repId: number): string | number | null {
   return null;
 }
 
-export function stepToGraph(text: string, docName: string): ParsedImport {
+/**
+ * @param {string} text
+ * @param {string} docName
+ * @returns {ParsedImport}
+ */
+export function stepToGraph(text, docName) {
   const file = parsePart21(text);
-  const warnings: string[] = [];
-  const e = (id: number | null) => (id === null ? undefined : file.entities.get(id));
+  /** @type {string[]} */
+  const warnings = [];
 
   // --- products ---------------------------------------------------------------
-  const products = new Map<number, Product>(); // by PRODUCT id
+  /** @type {Map<number, Product>} by PRODUCT id */
+  const products = new Map();
   for (const p of ofType(file, "PRODUCT")) {
     const id = str(p.params[0][0]) ?? "";
     const rawName = str(p.params[0][1]) || id;
@@ -131,7 +158,8 @@ export function stepToGraph(text: string, docName: string): ParsedImport {
   }
 
   // Formation → product (its id is the revision); definition → formation.
-  const formationProduct = new Map<number, number>();
+  /** @type {Map<number, number>} */
+  const formationProduct = new Map();
   for (const f of including(file, ["PRODUCT_DEFINITION_FORMATION", "PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE"])) {
     const params = f.params[f.types.findIndex((t) => t.startsWith("PRODUCT_DEFINITION_FORMATION"))];
     const productId = ref(params[2]);
@@ -141,15 +169,19 @@ export function stepToGraph(text: string, docName: string): ParsedImport {
     const product = products.get(productId);
     if (product && rev && !product.revision) product.revision = rev;
   }
-  const definitionProduct = new Map<number, number>();
+  /** @type {Map<number, number>} */
+  const definitionProduct = new Map();
   for (const d of including(file, ["PRODUCT_DEFINITION"])) {
     const params = d.params[d.types.indexOf("PRODUCT_DEFINITION")];
     const productId = formationProduct.get(ref(params[2]) ?? -1);
     if (productId !== undefined) definitionProduct.set(d.id, productId);
   }
+  /** @param {number} productId */
+  const productAt = (productId) => /** @type {Product} */ (products.get(productId));
 
   // --- properties (user-defined attributes) -----------------------------------
-  const propertyReps = new Map<number, number>(); // PROPERTY_DEFINITION → REPRESENTATION
+  /** @type {Map<number, number>} PROPERTY_DEFINITION → REPRESENTATION */
+  const propertyReps = new Map();
   for (const pdr of ofType(file, "PROPERTY_DEFINITION_REPRESENTATION")) {
     const def = ref(pdr.params[0][0]);
     const rep = ref(pdr.params[0][1]);
@@ -162,13 +194,13 @@ export function stepToGraph(text: string, docName: string): ParsedImport {
     const repId = propertyReps.get(pd.id);
     if (productId === undefined || repId === undefined) continue;
     const value = propertyValue(file, repId);
-    if (value !== null && value !== "") products.get(productId)!.properties[name] = value;
+    if (value !== null && value !== "") productAt(productId).properties[name] = value;
   }
   for (const m of ofType(file, "MATERIAL_DESIGNATION")) {
     const material = str(m.params[0][0]);
     for (const defId of refs(m.params[0][1])) {
       const productId = definitionProduct.get(defId);
-      if (material && productId !== undefined) products.get(productId)!.properties.material = material;
+      if (material && productId !== undefined) productAt(productId).properties.material = material;
     }
   }
 
@@ -177,7 +209,8 @@ export function stepToGraph(text: string, docName: string): ParsedImport {
   // only restate the part number or the raw product id.
   for (const p of products.values()) {
     const tc = p.properties;
-    const take = (k: string) => {
+    /** @param {string} k */
+    const take = (k) => {
       const v = tc[k];
       delete tc[k];
       return typeof v === "string" && v.trim() ? v.trim() : null;
@@ -196,7 +229,8 @@ export function stepToGraph(text: string, docName: string): ParsedImport {
   }
 
   // --- assembly structure -------------------------------------------------------
-  const usage = new Map<string, number>(); // "parent|child" → quantity
+  /** @type {Map<string, number>} "parent|child" → quantity */
+  const usage = new Map();
   for (const n of including(file, ["NEXT_ASSEMBLY_USAGE_OCCURRENCE"])) {
     const params = n.params[n.types.indexOf("NEXT_ASSEMBLY_USAGE_OCCURRENCE")];
     const parent = definitionProduct.get(ref(params[3]) ?? -1);
@@ -210,7 +244,8 @@ export function stepToGraph(text: string, docName: string): ParsedImport {
   }
 
   // --- PMI --------------------------------------------------------------------
-  const pmi: Record<string, number> = {};
+  /** @type {Record<string, number>} */
+  const pmi = {};
   for (const ent of file.entities.values()) {
     for (const t of ent.types) {
       const bucket = SEMANTIC_PMI[t];
@@ -236,14 +271,16 @@ export function stepToGraph(text: string, docName: string): ParsedImport {
   const children = new Set([...usage.keys()].map((k) => Number(k.split("|")[1])));
   const pmiOwners = products.size === 1 ? [...products.keys()] : [...products.keys()].filter((id) => !children.has(id));
   for (const id of pmiOwners) {
-    const props = products.get(id)!.properties;
+    const props = productAt(id).properties;
     for (const [bucket, count] of Object.entries(pmi)) props[`pmi.${bucket}`] = count;
     if (notes.length) props["pmi.notes"] = notes.slice(0, MAX_PMI_NOTES).join("; ");
   }
 
   // --- document -----------------------------------------------------------------
-  const nodes = new Map<string, GraphDocumentNode>();
-  const keyOf = new Map<number, string>();
+  /** @type {Map<string, GraphDocumentNode>} */
+  const nodes = new Map();
+  /** @type {Map<number, string>} */
+  const keyOf = new Map();
   for (const p of products.values()) {
     let key = p.key;
     if (nodes.has(key)) {
@@ -264,11 +301,13 @@ export function stepToGraph(text: string, docName: string): ParsedImport {
       },
     });
   }
-  const edges: GraphDocumentEdge[] = [];
+  /** @type {GraphDocumentEdge[]} */
+  const edges = [];
   for (const [k, quantity] of usage) {
     const [parent, child] = k.split("|").map(Number);
-    edges.push({ from: keyOf.get(parent)!, to: keyOf.get(child)!, type: EDGE_TYPES.HAS_CHILD, properties: { quantity } });
-    nodes.get(keyOf.get(parent)!)!.className = CLASSES.ASSEMBLY;
+    const from = /** @type {string} */ (keyOf.get(parent));
+    edges.push({ from, to: /** @type {string} */ (keyOf.get(child)), type: EDGE_TYPES.HAS_CHILD, properties: { quantity } });
+    /** @type {GraphDocumentNode} */ (nodes.get(from)).className = CLASSES.ASSEMBLY;
   }
 
   if (file.header.schema && !/AP2(03|14|42)|CONFIG_CONTROL|AUTOMOTIVE_DESIGN/i.test(file.header.schema)) {
