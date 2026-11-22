@@ -83,9 +83,20 @@ requirements, processes, changes and their links) in SAINT's own Postgres:
 service. `npm run db:seed` loads a small demo graph (a 5 HP induction motor)
 into an empty graph.
 
-Native importers for STEP/AP242, CSV/Excel, PLMXML and XMI/SysML are being
-ported from PMem's Python code; until they land, the `PMem/` folder is kept as
-reference only and is not run. After pulling the product changes, run
+Engineering files are imported in two steps, as in PMem: **upload** (the file
+is parsed and staged as a preview with counts, classes, sample parts and
+warnings) and **commit** (the preview is written to the graph). Committing with
+`replaceSourceId` re-imports a file: parts whose number is unchanged keep their
+id, so supplier links and POs that name them still work. Files are limited to
+4 MB (Vercel's request-body cap).
+
+| Format | Files | Notes |
+|---|---|---|
+| Parts list / BOM | `.csv`, `.tsv`, `.txt`, `.xlsx` | Columns recognised by name: Part Number, Name, Parent or Level, Qty, Type, RFLP, and link columns (Satisfies, Realizes, Traces To, References, Affects). Other columns become properties. |
+
+STEP/AP242, PLMXML and XMI/SysML importers are being ported from PMem's Python
+code; until they land, the `PMem/` folder is kept as reference only and is not
+run. After pulling the product changes, run
 `npm run db:migrate` locally (Vercel production builds migrate automatically,
 see below) and `npm run db:seed` once so existing roles pick up `product:read`
 and `product:write`.
@@ -115,6 +126,11 @@ and `product:write`.
 | `POST` | `/api/news/preview` | Fetch + classify news for an unsaved company |
 | `POST` | `/api/news/refresh` | `{supplierId}` one supplier, or `{cadence}` batch (Bearer `CRON_SECRET`) |
 | `GET` `PATCH` | `/api/alerts` | List / update risk alerts |
+| `POST` | `/api/product/imports` | multipart `file` → parsed and staged as a preview (nothing written yet) |
+| `GET` | `/api/product/imports`, `/api/product/imports/[id]` | Recent imports and accepted formats / one preview |
+| `POST` | `/api/product/imports/[id]/commit` | `{replaceSourceId?}` → write the preview into the graph |
+| `POST` | `/api/product/imports/[id]/cancel` | Discard a preview |
+| `GET` `DELETE` | `/api/product/graph-sources`, `/api/product/graph-sources/[id]` | Imported files in the graph / remove one |
 | `GET` | `/api/product/parts?q=&limit=` | Search parts and assemblies in the product graph |
 | `GET` | `/api/product/parts/[id]/links` | What a part is directly connected to (where-used) |
 | `POST` | `/api/product/change-impact` | `{partName}` or `{changeName}` → parts, assemblies, requirements, processes and trace links a change touches |

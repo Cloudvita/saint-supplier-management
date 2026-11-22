@@ -1,5 +1,5 @@
 import { CLASSES, EDGE_TYPES } from "./graph-model";
-import type { GraphDocument } from "../services/graph-writer";
+import type { GraphDocument } from "./graph-document";
 
 /**
  * A small product graph for a 5 HP induction motor, so the product features

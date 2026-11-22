@@ -92,6 +92,38 @@ export const graphEdges = pgTable(
   ]
 );
 
+/**
+ * An uploaded engineering file, parsed and waiting for review.
+ *
+ * PMem kept import tasks in server memory; on serverless hosting there is no
+ * such memory between requests, so the parsed document is staged here.
+ * Nothing reaches graph_nodes until the import is committed, and a commit can
+ * replace an earlier source in the same transaction (re-importing a file).
+ */
+export const graphImportStatusEnum = pgEnum("graph_import_status", ["PREVIEW", "COMMITTED", "CANCELLED"]);
+
+export const graphImports = pgTable(
+  "graph_imports",
+  {
+    id: primaryId(),
+    format: varchar("format", { length: 20 }).notNull(),
+    fileName: varchar("file_name", { length: 300 }).notNull(),
+    status: graphImportStatusEnum("status").notNull().default("PREVIEW"),
+    /** The parsed GraphDocument; cleared once committed or cancelled. */
+    document: jsonb("document").$type<Record<string, unknown> | null>(),
+    /** Counts, classes, edge types and sample nodes for the review screen. */
+    summary: jsonb("summary").$type<Record<string, unknown>>().notNull().default({}),
+    warnings: jsonb("warnings").$type<string[]>().notNull().default([]),
+    /** Set on commit: the graph source this import became. */
+    sourceId: text("source_id").references(() => graphSources.id, { onDelete: "set null" }),
+    createdBy: text("created_by"),
+    committedBy: text("committed_by"),
+    ...auditTimestamps(),
+  },
+  (t) => [index("graph_imports_status_idx").on(t.status)]
+);
+
+export type GraphImport = typeof graphImports.$inferSelect;
 export type GraphSource = typeof graphSources.$inferSelect;
 export type GraphNode = typeof graphNodes.$inferSelect;
 export type GraphEdge = typeof graphEdges.$inferSelect;

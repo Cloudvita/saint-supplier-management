@@ -2,7 +2,7 @@
   "name": "saint-supplier-management",
   "version": "0.1.0",
   "private": true,
-  "description": "SAINT \u2014 Supplier Management Module (Source-to-Procure platform)",
+  "description": "SAINT — Supplier Management Module (Source-to-Procure platform)",
   "scripts": {
     "dev": "next dev",
     "build": "node scripts/migrate.mjs && next build",
@@ -30,6 +30,7 @@
     "postgres": "^3.4.9",
     "react": "19.0.0",
     "react-dom": "19.0.0",
+    "read-excel-file": "9.3.14",
     "zod": "^3.24.1"
   },
   "devDependencies": {

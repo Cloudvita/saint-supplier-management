@@ -3,7 +3,8 @@
  * processes and the engineering links between them) and which suppliers can
  * make each part.
  *
- * Owns tables: graph_sources, graph_nodes, graph_edges, part_sources. This is
+ * Owns tables: graph_sources, graph_nodes, graph_edges, graph_imports,
+ * part_sources. This is
  * PMem's functionality as a SAINT module: the graph lives in SAINT's own
  * Postgres, not Neo4j, and no separate service is involved. Depends on
  * `/suppliers` through its barrel to check the supplier side of a link.
@@ -21,8 +22,19 @@ export {
   removeGraphSource,
   listGraphSources,
   seedDemoProductGraph,
-  type GraphDocument,
 } from "./services/graph-writer";
+
+export {
+  stageImport,
+  getImport,
+  listImports,
+  commitImport,
+  cancelImport,
+  supportedFormats,
+  MAX_IMPORT_BYTES,
+  type ImportView,
+  type ImportSummary,
+} from "./services/import.service";
 
 export {
   linkSupplierToPart,
@@ -48,7 +60,8 @@ export {
 
 export type { ProductNode, ProductLink } from "./domain/graph";
 export type { ChangeImpact, SimilarParts } from "./domain/impact";
-export type { PartSource, GraphNode, GraphEdge, GraphSource } from "./schema";
+export type { PartSource, GraphNode, GraphEdge, GraphSource, GraphImport } from "./schema";
+export type { GraphDocument } from "./domain/graph-document";
 
 export { EDGE_TYPES, CLASSES, type EdgeType } from "./domain/graph-model";
 

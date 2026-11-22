@@ -43,6 +43,13 @@
       "when": 1795310469254,
       "tag": "0005_product_graph",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795316935526,
+      "tag": "0006_graph_imports",
+      "breakpoints": true
     }
   ]
 }
