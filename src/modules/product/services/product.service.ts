@@ -5,6 +5,7 @@ import { impactScore, similarityScore, type ChangeImpact, type SimilarParts } fr
 import {
   assemblyAncestors,
   assemblySiblings,
+  degrees,
   directLinks,
   findNodes,
   getNode,
@@ -57,9 +58,23 @@ export async function getPartLinks(
   };
 }
 
+/**
+ * The best name match; when several nodes match equally well (the same part
+ * imported from two files), the one with more links — the copy that sits in
+ * an assembly rather than a stand-alone part file.
+ */
+async function bestConnectedMatch<T extends { id: string; name: string }>(name: string, candidates: T[]): Promise<T | null> {
+  const best = bestNameMatch(name, candidates);
+  if (!best) return null;
+  const ties = candidates.filter((c) => c.name.toLowerCase() === best.name.toLowerCase());
+  if (ties.length < 2) return best;
+  const degree = await degrees(ties.map((t) => t.id));
+  return ties.reduce((a, b) => ((degree.get(b.id) ?? 0) > (degree.get(a.id) ?? 0) ? b : a));
+}
+
 /** The best-matching change request / notice by name. */
 async function resolveChange(name: string) {
-  return bestNameMatch(name, await findNodes(name, RESOLVE_CANDIDATES, CHANGE_CLASSES));
+  return bestConnectedMatch(name, await findNodes(name, RESOLVE_CANDIDATES, CHANGE_CLASSES));
 }
 
 /**
@@ -67,10 +82,10 @@ async function resolveChange(name: string) {
  * node that is not a change (a function, a document ...).
  */
 async function resolvePartByName(name: string) {
-  const part = bestNameMatch(name, await findNodes(name, RESOLVE_CANDIDATES, PART_CLASSES));
+  const part = await bestConnectedMatch(name, await findNodes(name, RESOLVE_CANDIDATES, PART_CLASSES));
   if (part) return part;
   const others = (await findNodes(name, RESOLVE_CANDIDATES)).filter((n) => !CHANGE_CLASSES.includes(n.className ?? ""));
-  return bestNameMatch(name, others);
+  return bestConnectedMatch(name, others);
 }
 
 function uniqueBy<T>(items: T[], key: (t: T) => string): T[] {

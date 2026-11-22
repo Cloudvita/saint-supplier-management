@@ -49,6 +49,32 @@ export async function findNodes(text: string, limit: number, classNames?: string
     .limit(limit);
 }
 
+/** How many edges touch each node, for choosing among nodes that match equally. */
+export async function degrees(ids: string[]): Promise<Map<string, number>> {
+  if (ids.length === 0) return new Map();
+  const rows = (await db.execute(sql`
+    select n.id, (select count(*) from ${graphEdges} e where e.from_id = n.id or e.to_id = n.id)::int as degree
+    from ${graphNodes} n where n.id in ${ids}
+  `)) as unknown as Array<{ id: string; degree: number }>;
+  return new Map(rows.map((r) => [r.id, Number(r.degree)]));
+}
+
+/**
+ * Part numbers from a document that the graph already holds in other
+ * sources, grouped by source — the duplicates an import would create.
+ */
+export async function existingKeys(keys: string[]): Promise<Array<{ sourceId: string; sourceName: string; keys: string[] }>> {
+  if (keys.length === 0) return [];
+  const rows = (await db.execute(sql`
+    select s.id as source_id, s.name as source_name, array_agg(n.external_key order by n.external_key) as keys
+    from ${graphNodes} n join graph_sources s on s.id = n.source_id
+    where n.external_key in ${keys}
+    group by s.id, s.name
+    order by count(*) desc
+  `)) as unknown as Array<{ source_id: string; source_name: string; keys: string[] }>;
+  return rows.map((r) => ({ sourceId: r.source_id, sourceName: r.source_name, keys: r.keys }));
+}
+
 export async function getNode(id: string): Promise<NodeRow | null> {
   const [row] = await db.select(nodeColumns).from(graphNodes).where(eq(graphNodes.id, id));
   return row ?? null;
